@@ -84,9 +84,7 @@ jobs:
           - **Labels**: ${{ env.LABELS }}
           - **Workflow Status**: ${{ env.WORKFLOW_STATUS }}
           **Files Changed:**
-          ```
           ${{ join(env.FILES_LINKED, '') }}
-          ```
           Please ensure all tests and checks are passed. We'll be reviewing it shortly.
           For more details, please check [our contribution guide](https://github.com/${{ github.repository }}/blob/main/CONTRIBUTING.md).
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
