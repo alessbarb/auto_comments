@@ -23,18 +23,29 @@ jobs:
     - name: Gather PR details
       id: pr_details
       run: |
+        set -e  # Stop execution on any error
+    
         PR_ID=$(jq -r ".pull_request.number" "$GITHUB_EVENT_PATH") || exit 1
         PR_AUTHOR=$(jq -r ".pull_request.user.login" "$GITHUB_EVENT_PATH") || exit 1
         PR_BRANCH=$(jq -r ".pull_request.head.ref" "$GITHUB_EVENT_PATH") || exit 1
-
+    
         # Debugging: Echo PR details
         echo "Debug: PR_ID=$PR_ID"
         echo "Debug: PR_AUTHOR=$PR_AUTHOR"
         echo "Debug: PR_BRANCH=$PR_BRANCH"
-
+    
+        # Debugging: Print complete API responses for Labels and Files Changed
+        echo "Debug: Complete API Response for Labels"
+        curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          https://api.github.com/repos/${{ github.repository }}/pulls/$PR_ID | jq .
+        
+        echo "Debug: Complete API Response for Files Changed"
+        curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          https://api.github.com/repos/${{ github.repository }}/pulls/$PR_ID/files | jq .
+    
         FILES_LINKED=""
         REPO_URL="https://github.com/${{ github.repository }}/blob/$PR_BRANCH"
-
+    
         for i in {1..3}; do
           LABELS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             https://api.github.com/repos/${{ github.repository }}/pulls/$PR_ID \
@@ -42,17 +53,16 @@ jobs:
           FILES_CHANGED=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             https://api.github.com/repos/${{ github.repository }}/pulls/$PR_ID/files \
             | jq -r '.[] | .filename' | xargs) && break || sleep 15
-
+    
           # Debugging: Echo API responses
           echo "Debug: Labels Iteration $i: $LABELS"
           echo "Debug: Files Changed Iteration $i: $FILES_CHANGED"
-
         done
-
+    
         for file in $FILES_CHANGED; do
           FILES_LINKED="$FILES_LINKED- [$file]($REPO_URL/$file)\n"
         done
-
+    
         echo "PR_ID=$PR_ID" >> $GITHUB_ENV
         echo "PR_AUTHOR=$PR_AUTHOR" >> $GITHUB_ENV
         echo "FILES_LINKED=$FILES_LINKED" >> $GITHUB_ENV
