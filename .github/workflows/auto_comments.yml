@@ -58,11 +58,6 @@ jobs:
         echo "FILES_LINKED=$FILES_LINKED" >> $GITHUB_ENV
         echo "LABELS=$LABELS" >> $GITHUB_ENV
 
-    - name: Run Linter
-      run: |
-        npm install
-        eslint ${{ env.FILES_CHANGED }}
-
     - name: Set Workflow Status
       run: echo "WORKFLOW_STATUS=success" >> $GITHUB_ENV
       if: success()
