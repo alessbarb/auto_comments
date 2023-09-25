@@ -7,12 +7,11 @@ jobs:
   comment:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write # More restrictive permission
+      pull-requests: write
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    # Caching Node.js modules
     - name: Cache Node.js modules
       uses: actions/cache@v2
       with:
@@ -24,21 +23,30 @@ jobs:
     - name: Gather PR details
       id: pr_details
       run: |
-        # Extract PR details from GitHub event payload
         PR_ID=$(jq -r ".pull_request.number" "$GITHUB_EVENT_PATH") || exit 1
         PR_AUTHOR=$(jq -r ".pull_request.user.login" "$GITHUB_EVENT_PATH") || exit 1
         PR_BRANCH=$(jq -r ".pull_request.head.ref" "$GITHUB_EVENT_PATH") || exit 1
+
+        # Debugging: Echo PR details
+        echo "Debug: PR_ID=$PR_ID"
+        echo "Debug: PR_AUTHOR=$PR_AUTHOR"
+        echo "Debug: PR_BRANCH=$PR_BRANCH"
+
         FILES_LINKED=""
         REPO_URL="https://github.com/${{ github.repository }}/blob/$PR_BRANCH"
 
         for i in {1..3}; do
-          # Fetch labels and changed files
           LABELS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             https://api.github.com/repos/${{ github.repository }}/pulls/$PR_ID \
             | jq -r '.labels[] | .name' | xargs) && break || sleep 15
           FILES_CHANGED=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             https://api.github.com/repos/${{ github.repository }}/pulls/$PR_ID/files \
             | jq -r '.[] | .filename' | xargs) && break || sleep 15
+
+          # Debugging: Echo API responses
+          echo "Debug: Labels Iteration $i: $LABELS"
+          echo "Debug: Files Changed Iteration $i: $FILES_CHANGED"
+
         done
 
         for file in $FILES_CHANGED; do
@@ -49,6 +57,11 @@ jobs:
         echo "PR_AUTHOR=$PR_AUTHOR" >> $GITHUB_ENV
         echo "FILES_LINKED=$FILES_LINKED" >> $GITHUB_ENV
         echo "LABELS=$LABELS" >> $GITHUB_ENV
+
+    - name: Run Linter
+      run: |
+        npm install
+        eslint ${{ env.FILES_CHANGED }}
 
     - name: Set Workflow Status
       run: echo "WORKFLOW_STATUS=success" >> $GITHUB_ENV
@@ -68,12 +81,10 @@ jobs:
           - **PR Number**: [#${{ env.PR_ID }}](https://github.com/${{ github.repository }}/pull/${{ env.PR_ID }})
           - **Labels**: ${{ env.LABELS }}
           - **Workflow Status**: ${{ env.WORKFLOW_STATUS }}
-
           **Files Changed:**
           ```
           ${{ join(env.FILES_LINKED, '') }}
           ```
-
           Please ensure all tests and checks are passed. We'll be reviewing it shortly.
           For more details, please check [our contribution guide](https://github.com/${{ github.repository }}/blob/main/CONTRIBUTING.md).
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
