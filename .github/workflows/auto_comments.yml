@@ -188,17 +188,17 @@ jobs:
           # Capture more detailed logs
           echo "Build and test steps completed."
 
-          # Para proyectos Node, intentar obtener resumen de cobertura
+          # Try to get coverage summary
           if [[ "$PROJECT_TYPE" == "node" || "$PROJECT_TYPE" == "node-yarn" ]]; then
             COVERAGE_FILE="./coverage/coverage-summary.json"
             if [ -f "$COVERAGE_FILE" ]; then
               COVERAGE_PCT=$(jq '.total.lines.pct' "$COVERAGE_FILE")
               echo "COVERAGE=Coverage: ${COVERAGE_PCT}%" >> $GITHUB_ENV
             else
-              echo "COVERAGE=No coverage info found." >> $GITHUB_ENV
+              echo "COVERAGE=No coverage info found" >> $GITHUB_ENV
             fi
           else
-            echo "COVERAGE=N/A" >> $GITHUB_ENV
+            echo "COVERAGE=No coverage info found (unknown project type)" >> $GITHUB_ENV
           fi
 
           echo "TEST_STATUS=All tests passed" >> $GITHUB_ENV
@@ -235,6 +235,9 @@ jobs:
         run: |
           source ./retry.sh
           PR_LABELS=$(jq -r '.pull_request.labels[]?.name' "$GITHUB_EVENT_PATH" | tr '\n' ', ')
+          if [ -z "$PR_LABELS" ]; then
+            PR_LABELS="No labels assigned"
+          fi
           echo "PR_LABELS=${PR_LABELS%,}" >> $GITHUB_ENV
 
           FILES_JSON=$(curl -s -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$REPO/pulls/$PR_ID/files")
@@ -270,11 +273,8 @@ jobs:
         run: |
           # Escape quotes and backticks in variables that may contain special characters
           FILES_LINKED_ESCAPED=$(echo "$FILES_LINKED" | sed -E 's/["“”]/\\"/g; s/`/´/g')
-          PR_BODY_ESCAPED=$(echo "$PR_BODY" | sed -E 's/["“”]/\\"/g; s/`/´/g')
-
-          # Format PR body as a blockquote (each line prefixed with "> ")
-          PR_BODY_FORMATTED=$(echo "$PR_BODY_ESCAPED" | sed 's/^/> /')
-         
+          PR_BODY_FORMATTED=$(echo "$PR_BODY" | sed -E 's/["“”]/\\"/g; s/`/´/g; s/^/> /')
+          
           COMMENT_BODY=$(jq -n \
             --arg pr_author "$PR_AUTHOR" \
             --arg pr_title "$PR_TITLE" \
@@ -296,7 +296,7 @@ jobs:
                 "**PR URL**:\n" + $pr_url + "\n\n" +
                 "**PR Body**:\n" + $pr_body + "\n\n" +
                 "**Labels**:\n" + $pr_labels + "\n\n" +
-                "**Workflow Status**: " + $workflow_status + "\n\n" +
+                "**Workflow Status**:\n" + $workflow_status + "\n\n" +
                 "**Files Changed**:\n" + $files_linked + "\n\n" +
                 "**Lint Results**:\n" + $lint_results + "\n\n" +
                 "**Test Summary**:\n" + $test_summary + "\n\n" +
