@@ -274,44 +274,7 @@ jobs:
 
           # Format PR body as a blockquote (each line prefixed with "> ")
           PR_BODY_FORMATTED=$(echo "$PR_BODY_ESCAPED" | sed 's/^/> /')
-
-          # Calculate basic metrics
-          NUM_FILES=$(echo "$FILES_LINKED" | grep -c "\- \[")
-          BODY_WORD_COUNT=$(echo "$PR_BODY" | wc -w)
-          TOTAL_ADDITIONS=$(echo "$FILES_JSON" | jq '[.[] | .additions] | add')
-          TOTAL_DELETIONS=$(echo "$FILES_JSON" | jq '[.[] | .deletions] | add')
-          TOTAL_CHANGES=$((TOTAL_ADDITIONS + TOTAL_DELETIONS))
-          if [ "$NUM_FILES" -gt 0 ]; then
-            AVG_CHANGES=$(echo "scale=2; $TOTAL_CHANGES / $NUM_FILES" | bc)
-          else
-            AVG_CHANGES=0
-          fi
-          
-          # Build Quality Analysis section
-          QUALITATIVE_ANALYSIS="### Quality Analysis:\n"
-          QUALITATIVE_ANALYSIS+="- Modified files: $NUM_FILES\n"
-          
-          if [ "$BODY_WORD_COUNT" -ge 50 ]; then
-            QUALITATIVE_ANALYSIS+="- ✅ Detailed ($BODY_WORD_COUNT words)\n"
-          else
-            QUALITATIVE_ANALYSIS+="- ⚠️ Brief ($BODY_WORD_COUNT words)\n"
-          fi
-          
-          QUALITATIVE_ANALYSIS+="- Total lines changed: $TOTAL_CHANGES\n"
-          QUALITATIVE_ANALYSIS+="- Additions: $TOTAL_ADDITIONS\n"
-          QUALITATIVE_ANALYSIS+="- Deletions: $TOTAL_DELETIONS\n"
-          QUALITATIVE_ANALYSIS+="- Average changes per file: $AVG_CHANGES\n"
-          
-          if echo "$FILES_LINKED" | grep -qi "README"; then
-            QUALITATIVE_ANALYSIS+="- Documentation updates detected.\n"
-          else
-            QUALITATIVE_ANALYSIS+="- No documentation updates detected. Consider updating docs if necessary.\n"
-          fi
-          
-          if [ "$TOTAL_CHANGES" -gt 500 ]; then
-            QUALITATIVE_ANALYSIS+="- ⚠️ High impact changes detected. Please review carefully.\n"
-          fi
-          
+         
           COMMENT_BODY=$(jq -n \
             --arg pr_author "$PR_AUTHOR" \
             --arg pr_title "$PR_TITLE" \
@@ -325,7 +288,6 @@ jobs:
             --arg coverage "$COVERAGE" \
             --arg commit_sha "$COMMIT_SHA" \
             --arg commit_msg "$COMMIT_MESSAGE" \
-            --arg analysis "$QUALITATIVE_ANALYSIS" \
             '{
               body: (
                 "Hey @" + $pr_author + ",\n\n" +
@@ -339,7 +301,6 @@ jobs:
                 "### Lint Results\n" + $lint_results + "\n\n" +
                 "### Test Summary\n" + $test_summary + "\n\n" +
                 "### Coverage Report\n" + $coverage + "\n\n" +
-                "### Qualitative Analysis\n" + $analysis + "\n\n" +
                 "**Last Commit SHA**: " + $commit_sha + "\n" +
                 "**Commit Message**: " + $commit_msg + "\n\n" +
                 ":sparkles: Please ensure all tests and checks pass.\n" +
