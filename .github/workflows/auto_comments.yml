@@ -48,54 +48,60 @@ jobs:
       - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
+      # (3.1) Set up Node.js environment (for Node-based projects)
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
       # (4) Detect project type & commands
       - name: 🔍 Detect Project Type
         id: detect
         run: |
           echo "Detecting project type..."
-
+      
           if [ -f "yarn.lock" ]; then
             echo "PROJECT_TYPE=node-yarn" >> $GITHUB_ENV
-            echo "BUILD_COMMAND='yarn install'" >> $GITHUB_ENV
-            echo "TEST_COMMAND='yarn test'" >> $GITHUB_ENV
-            echo "LINT_COMMAND='yarn lint'" >> $GITHUB_ENV
-            echo "DEPENDENCY_FILE='yarn.lock'" >> $GITHUB_ENV
-            echo "CACHE_PATH='~/.cache/yarn'" >> $GITHUB_ENV
+            echo "BUILD_COMMAND=yarn install" >> $GITHUB_ENV
+            echo "TEST_COMMAND=yarn test" >> $GITHUB_ENV
+            echo "LINT_COMMAND=yarn lint" >> $GITHUB_ENV
+            echo "DEPENDENCY_FILE=yarn.lock" >> $GITHUB_ENV
+            echo "CACHE_PATH=~/.cache/yarn" >> $GITHUB_ENV
           elif [ -f "package.json" ]; then
             echo "PROJECT_TYPE=node" >> $GITHUB_ENV
-            echo "BUILD_COMMAND='npm install'" >> $GITHUB_ENV
-            echo "TEST_COMMAND='npm test'" >> $GITHUB_ENV
-            echo "LINT_COMMAND='npm run lint'" >> $GITHUB_ENV
-            echo "DEPENDENCY_FILE='package-lock.json'" >> $GITHUB_ENV
-            echo "CACHE_PATH='~/.npm'" >> $GITHUB_ENV
+            echo "BUILD_COMMAND=npm install" >> $GITHUB_ENV
+            echo "TEST_COMMAND=npm test" >> $GITHUB_ENV
+            echo "LINT_COMMAND=npm run lint" >> $GITHUB_ENV
+            echo "DEPENDENCY_FILE=package-lock.json" >> $GITHUB_ENV
+            echo "CACHE_PATH=~/.npm" >> $GITHUB_ENV
           elif [ -f "pom.xml" ]; then
             echo "PROJECT_TYPE=maven" >> $GITHUB_ENV
-            echo "BUILD_COMMAND='mvn clean package'" >> $GITHUB_ENV
-            echo "TEST_COMMAND='mvn test'" >> $GITHUB_ENV
-            echo "LINT_COMMAND='mvn checkstyle:check'" >> $GITHUB_ENV
-            echo "DEPENDENCY_FILE='pom.xml'" >> $GITHUB_ENV
-            echo "CACHE_PATH='~/.m2/repository'" >> $GITHUB_ENV
+            echo "BUILD_COMMAND=mvn clean package" >> $GITHUB_ENV
+            echo "TEST_COMMAND=mvn test" >> $GITHUB_ENV
+            echo "LINT_COMMAND=mvn checkstyle:check" >> $GITHUB_ENV
+            echo "DEPENDENCY_FILE=pom.xml" >> $GITHUB_ENV
+            echo "CACHE_PATH=~/.m2/repository" >> $GITHUB_ENV
           elif [ -f "build.gradle" ]; then
             echo "PROJECT_TYPE=gradle" >> $GITHUB_ENV
-            echo "BUILD_COMMAND='gradle build'" >> $GITHUB_ENV
-            echo "TEST_COMMAND='gradle test'" >> $GITHUB_ENV
-            echo "LINT_COMMAND='gradle check'" >> $GITHUB_ENV
-            echo "DEPENDENCY_FILE='build.gradle'" >> $GITHUB_ENV
-            echo "CACHE_PATH='~/.gradle'" >> $GITHUB_ENV
+            echo "BUILD_COMMAND=gradle build" >> $GITHUB_ENV
+            echo "TEST_COMMAND=gradle test" >> $GITHUB_ENV
+            echo "LINT_COMMAND=gradle check" >> $GITHUB_ENV
+            echo "DEPENDENCY_FILE=build.gradle" >> $GITHUB_ENV
+            echo "CACHE_PATH=~/.gradle" >> $GITHUB_ENV
           elif [ -f "requirements.txt" ]; then
             echo "PROJECT_TYPE=python" >> $GITHUB_ENV
-            echo "BUILD_COMMAND='pip install -r requirements.txt'" >> $GITHUB_ENV
-            echo "TEST_COMMAND='pytest'" >> $GITHUB_ENV
-            echo "LINT_COMMAND='flake8 .'" >> $GITHUB_ENV
-            echo "DEPENDENCY_FILE='requirements.txt'" >> $GITHUB_ENV
-            echo "CACHE_PATH='~/.cache/pip'" >> $GITHUB_ENV
+            echo "BUILD_COMMAND=pip install -r requirements.txt" >> $GITHUB_ENV
+            echo "TEST_COMMAND=pytest" >> $GITHUB_ENV
+            echo "LINT_COMMAND=flake8 ." >> $GITHUB_ENV
+            echo "DEPENDENCY_FILE=requirements.txt" >> $GITHUB_ENV
+            echo "CACHE_PATH=~/.cache/pip" >> $GITHUB_ENV
           else
             echo "PROJECT_TYPE=unknown" >> $GITHUB_ENV
-            echo "BUILD_COMMAND='echo \"No build command (unknown project type)\"'" >> $GITHUB_ENV
-            echo "TEST_COMMAND='echo \"No test command (unknown project type)\"'" >> $GITHUB_ENV
-            echo "LINT_COMMAND='echo \"No lint command (unknown project type)\"'" >> $GITHUB_ENV
-            echo "DEPENDENCY_FILE=''" >> $GITHUB_ENV
-            echo "CACHE_PATH=''" >> $GITHUB_ENV
+            echo "BUILD_COMMAND=echo \"No build command (unknown project type)\"" >> $GITHUB_ENV
+            echo "TEST_COMMAND=echo \"No test command (unknown project type)\"" >> $GITHUB_ENV
+            echo "LINT_COMMAND=echo \"No lint command (unknown project type)\"" >> $GITHUB_ENV
+            echo "DEPENDENCY_FILE=" >> $GITHUB_ENV
+            echo "CACHE_PATH=" >> $GITHUB_ENV
           fi
 
       # (4.1) Prepare cache info
@@ -213,7 +219,6 @@ jobs:
           # Example: Save a successful test summary message
           echo "TESTS_SUMMARY='All tests passed (example)'" >> $GITHUB_ENV
         env:
-          # These variables would be defined in previous steps of your workflow
           PROJECT_TYPE: ${{ env.PROJECT_TYPE }}
           BUILD_COMMAND: ${{ env.BUILD_COMMAND }}
           TEST_COMMAND: ${{ env.TEST_COMMAND }}
@@ -241,7 +246,7 @@ jobs:
           echo "COMMIT_SHA=$COMMIT_SHA" >> $GITHUB_ENV
           echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
 
-      # (8) Gather PR details
+      # (8) Gather PR details (labels, changed files)
       - name: 📊 Gather PR Details
         id: pr_details
         run: |
@@ -274,7 +279,7 @@ jobs:
             DELETIONS=$(_jq '.deletions')
             CHANGES=$(_jq '.changes')
 
-            echo "- [$FILE_NAME]($REPO_URL/$FILE_NAME) (Add: $ADDITIONS, Del: $DELETIONS, Changes: $CHANGES)" >> files_linked.txt
+            echo "- [$FILE_NAME]($REPO_URL/$FILE_NAME) (Additions: $ADDITIONS, Deletions: $DELETIONS, Changes: $CHANGES)" >> files_linked.txt
           done
 
           {
@@ -282,6 +287,8 @@ jobs:
             cat files_linked.txt
             echo EOF
           } >> "$GITHUB_ENV"
+
+          echo "PR details gathered successfully."
 
       # (9) Workflow status steps
       - name: ✔️ Workflow Status = Success
@@ -322,10 +329,11 @@ jobs:
                 "Hey @" + $pr_author + ",\n\n" +
                 "## 🚀 Pull Request Summary\n" +
                 "**Title**: " + $pr_title + "\n" +
-                "**URL**: " + $pr_url + "\n" +
-                "**Labels**: " + $pr_labels + "\n\n" +
-                "<details><summary>Files Changed</summary>\n\n" +
-                $files_linked + "\n</details>\n\n" +
+                "**PR URL**: " + $pr_url + "\n" +
+                "**PR Body**: " + $pr_body + "\n" +
+                "**Labels**: " + $pr_labels + "\n" +
+                "**Workflow Status**: " + $workflow_status + "\n\n" +
+                "**Files Changed:**\n" + $files_linked + "\n\n" +
                 "### Lint Results\n" + $lint_results + "\n\n" +
                 "### Test Summary\n" + $tests_summary + "\n\n" +
                 "### Coverage Report\n" + $coverage_report + "\n\n" +
