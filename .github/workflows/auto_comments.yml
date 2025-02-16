@@ -277,15 +277,14 @@ jobs:
           NUM_FILES=$(echo "$FILES_LINKED" | grep -c "\- \[")
           BODY_WORD_COUNT=$(echo "$PR_BODY" | wc -w)
           
-          QUALITATIVE_ANALYSIS+=$'**Size Analysis**:  \n'  
-          QUALITATIVE_ANALYSIS+=$'- Modified files: '$NUM_FILES$'  \n'  
-          
-          QUALITATIVE_ANALYSIS+=$'**Description Quality**:  \n'  
+          QUALITATIVE_ANALYSIS=$''
+          QUALITATIVE_ANALYSIS+=$'**Size Analysis**:\n'
+          QUALITATIVE_ANALYSIS+=$'- Modified files: '$NUM_FILES$'\n'
+          QUALITATIVE_ANALYSIS+=$'**Description Quality**:\n'
           if [ "$BODY_WORD_COUNT" -ge 50 ]; then
-            QUALITATIVE_ANALYSIS+=$'- ✅ Detailed ('$BODY_WORD_COUNT' words)'
+            QUALITATIVE_ANALYSIS+=$'- ✅ Detailed ('$BODY_WORD_COUNT' words)\n'
           else
-            QUALITATIVE_ANALYSIS+=$'- ⚠️ Brief ('$BODY_WORD_COUNT$' words)  \n'  
-            QUALITATIVE_ANALYSIS+=$'  _Consider adding more context_'
+            QUALITATIVE_ANALYSIS+=$'- ⚠️ Brief ('$BODY_WORD_COUNT' words)\n'
           fi
 
           FORMATTED_ANALYSIS=$(echo "$QUALITATIVE_ANALYSIS" | jq -Rs . | sed 's/\\n/\\\\n/g')
@@ -303,27 +302,27 @@ jobs:
             --arg coverage "$COVERAGE" \
             --arg commit_sha "$COMMIT_SHA" \
             --arg commit_msg "$COMMIT_MESSAGE" \
-            --arg analysis "$FORMATTED_ANALYSIS" \
+            --arg analysis "$QUALITATIVE_ANALYSIS" \
             '{
               body: (
                 "Hey @" + $pr_author + ",\n\n" +
                 "## 🚀 Pull Request Summary\n" +
                 "**Title**: " + $pr_title + "\n" +
                 "**PR URL**: " + $pr_url + "\n" +
-                "**PR Body**: " + "\n" + $pr_body + "\n\n" +
+                "**PR Body**: " + "\n" + "> " + $pr_body + "\n\n" +
                 "**Labels**: " + $pr_labels + "\n" +
                 "**Workflow Status**: " + $workflow_status + "\n\n" +
                 "### Files Changed\n" + $files_linked + "\n\n" +
                 "### Lint Results\n" + $lint_results + "\n\n" +
                 "### Test Summary\n" + $test_summary + "\n\n" +
                 "### Coverage Report\n" + $coverage + "\n\n" +
-                "### Qualitative Analysis  \n" + ($analysis | gsub("\\\\n"; "\n")) + "\n\n" + 
+                "### Qualitative Analysis\n" + $analysis + "\n\n" +
                 "**Last Commit SHA**: " + $commit_sha + "\n" +
                 "**Commit Message**: " + $commit_msg + "\n\n" +
                 ":sparkles: Please ensure all tests and checks pass.\n" +
                 "[View PR Details](" + $pr_url + ")"
               )
-            }')
+          }' | sed 's/\\n/\n/g') 
           
           # Truncate if the comment exceeds GitHub's limit
           if [[ ${#COMMENT_BODY} -gt 65536 ]]; then
