@@ -277,18 +277,15 @@ jobs:
           NUM_FILES=$(echo "$FILES_LINKED" | grep -c "\- \[")
           BODY_WORD_COUNT=$(echo "$PR_BODY" | wc -w)
           
-          QUALITATIVE_ANALYSIS=$''
           QUALITATIVE_ANALYSIS+=$'**Size Analysis**:\n'
-          QUALITATIVE_ANALYSIS+=$'- Modified files: '$NUM_FILES$'\n'
+          QUALITATIVE_ANALYSIS+=$'- Modified files: '"$NUM_FILES"$'\n'
           QUALITATIVE_ANALYSIS+=$'**Description Quality**:\n'
           if [ "$BODY_WORD_COUNT" -ge 50 ]; then
-            QUALITATIVE_ANALYSIS+=$'- ✅ Detailed ('$BODY_WORD_COUNT' words)\n'
+            QUALITATIVE_ANALYSIS+=$'- ✅ Detailed ('"$BODY_WORD_COUNT"' words)\n'
           else
-            QUALITATIVE_ANALYSIS+=$'- ⚠️ Brief ('$BODY_WORD_COUNT' words)\n'
+            QUALITATIVE_ANALYSIS+=$'- ⚠️ Brief ('"$BODY_WORD_COUNT"' words)\n'
           fi
-
-          FORMATTED_ANALYSIS=$(echo "$QUALITATIVE_ANALYSIS" | jq -Rs . | sed 's/\\n/\\\\n/g')
-          
+      
           COMMENT_BODY=$(jq -n \
             --arg pr_author "$PR_AUTHOR" \
             --arg pr_title "$PR_TITLE" \
@@ -322,13 +319,13 @@ jobs:
                 ":sparkles: Please ensure all tests and checks pass.\n" +
                 "[View PR Details](" + $pr_url + ")"
               )
-          }' | sed 's/\\n/\n/g') 
-          
+            }')
+      
           # Truncate if the comment exceeds GitHub's limit
           if [[ ${#COMMENT_BODY} -gt 65536 ]]; then
             COMMENT_BODY="${COMMENT_BODY:0:65532}...)"
           fi
-          
+      
           curl -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
