@@ -274,7 +274,7 @@ jobs:
           # Escape quotes and backticks in variables that may contain special characters
           FILES_LINKED_ESCAPED=$(echo "$FILES_LINKED" | sed -E 's/["“”]/\\"/g; s/`/´/g')
           PR_BODY_FORMATTED=$(echo "$PR_BODY" | sed -E 's/["“”]/\\"/g; s/`/´/g; s/^/> /')
-          WORKFLOW_STATUS=$(echo "${{ job.status }}" | sed 's/^./\u&/')"
+          WORKFLOW_STATUS=$(echo "${{ job.status }}" | sed 's/^./\u&/')
           
           COMMENT_BODY=$(jq -n \
             --arg pr_author "$PR_AUTHOR" \
