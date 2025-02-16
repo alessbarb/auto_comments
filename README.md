@@ -49,7 +49,7 @@ Here's the workflow configuration:
 name: Auto-comment on PR
 on:
   pull_request:
-    types: 
+    types:
       - opened
       - synchronize
 
@@ -64,7 +64,8 @@ jobs:
       PR_AUTHOR: "${{ github.event.pull_request.user.login }}"
       PR_ID: "${{ github.event.pull_request.number }}"
       PR_BRANCH: "${{ github.event.pull_request.head.ref }}"
-      PR_TITLE: "${{ github.event.pull_request.html_url }}"
+      PR_TITLE: "${{ github.event.pull_request.title }}"
+      PR_URL: "${{ github.event.pull_request.html_url }}"
       PR_BODY: "${{ github.event.pull_request.body }}"
       DEBUG: "${{ github.event.inputs.debug || 'false' }}"  
 
@@ -84,14 +85,20 @@ jobs:
       run: |
         echo "Validating input data: REPO=$REPO, PR_ID=$PR_ID, PR_BRANCH=$PR_BRANCH"
         if [[ -z "$REPO" || -z "$PR_ID" || -z "$PR_BRANCH" ]]; then
-          echo "Invalid input data."
+          echo "Invalid input data. REPO, PR_ID o PR_BRANCH están vacíos."
           exit 1
         fi
+
+        if [[ -z "$GITHUB_TOKEN" ]]; then
+          echo "GITHUB_TOKEN está vacío. No se puede continuar."
+          exit 1
+        fi
+
         echo "Input data validated successfully."
 
-    # Checkout Code
+    # Checkout Code (migración a la versión más reciente)
     - name: 📥 Checkout Code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     # Data Gathering Phase: Collect PR details such as labels and files changed
     - name: 📊 Gather PR Details
@@ -102,7 +109,7 @@ jobs:
           local -r cmd="$1"
           local -r max_retries="$2"
           local -r wait_time="$3"
-          local -n result_ref="$4"  
+          local -n result_ref="$4"
           local retry_count=0
 
           while [[ $retry_count -lt $max_retries ]]; do
@@ -126,7 +133,7 @@ jobs:
         # Fetch PR labels
         echo "Fetching PR labels..."
         PR_LABELS=$(jq -r '.pull_request.labels[]?.name' "$GITHUB_EVENT_PATH" | tr '\n' ', ') || exit 1
-        if [[ $? -ne 0 ]]; then  
+        if [[ $? -ne 0 ]]; then
           echo "Failed to fetch PR labels using jq. Exiting."
           exit 1
         fi
@@ -145,23 +152,22 @@ jobs:
 
         FILES_LINKED=""
         REPO_URL="https://github.com/$REPO/blob/$PR_BRANCH"
-        
+
         # Iterate through each file to get details
         echo "Iterating through each file to get details..."
         for row in $(echo "${FILES_JSON}" | jq -r '.[] | @base64'); do
           _jq() {
             echo ${row} | base64 --decode | jq -r ${1}
           }
-          
+
           FILE_NAME=$(_jq '.filename')
           ADDITIONS=$(_jq '.additions')
           DELETIONS=$(_jq '.deletions')
           CHANGES=$(_jq '.changes')
-          
-          echo "- [$FILE_NAME]($REPO_URL/$FILE_NAME) (Additions: $ADDITIONS, Deletions: $DELETIONS, Changes: $CHANGES)" >> files_linked.txt    
-          
+
+          echo "- [$FILE_NAME]($REPO_URL/$FILE_NAME) (Additions: $ADDITIONS, Deletions: $DELETIONS, Changes: $CHANGES)" >> files_linked.txt
         done
-        
+
         {
           echo 'FILES_LINKED<<EOF'
           cat files_linked.txt
@@ -194,25 +200,29 @@ jobs:
         COMMENT_BODY=$(jq -n \
                         --arg pr_author "$PR_AUTHOR" \
                         --arg pr_title "$PR_TITLE" \
+                        --arg pr_url "$PR_URL" \
                         --arg pr_body "$PR_BODY" \
                         --arg repo "$REPO" \
                         --arg pr_labels "$PR_LABELS" \
                         --arg workflow_status "$WORKFLOW_STATUS" \
                         --arg files_linked "$FILES_LINKED" \
                         '{
-                          "body": ("Hey @" + $pr_author + ",\n" +
-                                  "- **PR Title**: " + $pr_title + "\n" +
-                                  "- **PR Body**: " + $pr_body + "\n" +
-                                  "- **Labels**: " + $pr_labels + "\n" +
-                                  "- **Workflow Status**: " + $workflow_status + "\n\n" +
-                                  "**Files Changed:**\n" + $files_linked + "\n\n" +
-                                  "Please ensure all tests and checks are passed. We will examine it shortly.\n" +
-                                  "For more details, please check [our contribution guide](https://github.com/" + $repo + "/blob/main/CONTRIBUTING.md).")
+                          "body": (
+                            "Hey @" + $pr_author + ",\n" +
+                            "- **PR Title**: " + $pr_title + "\n" +
+                            "- **PR URL**: " + $pr_url + "\n" +
+                            "- **PR Body**: " + $pr_body + "\n" +
+                            "- **Labels**: " + $pr_labels + "\n" +
+                            "- **Workflow Status**: " + $workflow_status + "\n\n" +
+                            "**Files Changed:**\n" + $files_linked + "\n\n" +
+                            "Please ensure all tests and checks are passed. We will examine it shortly.\n" +
+                            "For more details, please check [our contribution guide](https://github.com/" + $repo + "/blob/main/CONTRIBUTING.md)."
+                          )
                         }')
 
         # Validate comment body before posting
         echo "Validating comment body..."
-        if [[ -z "$COMMENT_BODY" ]]; then 
+        if [[ -z "$COMMENT_BODY" ]]; then
           echo "Comment body is empty. Aborting."
           exit 1
         fi
