@@ -317,7 +317,7 @@ jobs:
                 "### Lint Results\n" + $lint_results + "\n\n" +
                 "### Test Summary\n" + $test_summary + "\n\n" +
                 "### Coverage Report\n" + $coverage + "\n\n" +
-                "### Qualitative Analysis  \n" + ($analysis | gsub("\\\\n"; "\n")) + "\n\n"
+                "### Qualitative Analysis  \n" + ($analysis | gsub("\\\\n"; "\n")) + "\n\n" + 
                 "**Last Commit SHA**: " + $commit_sha + "\n" +
                 "**Commit Message**: " + $commit_msg + "\n\n" +
                 ":sparkles: Please ensure all tests and checks pass.\n" +
