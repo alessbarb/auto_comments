@@ -287,43 +287,31 @@ jobs:
             AVG_CHANGES=0
           fi
           
-          # Build Size Analysis and Description Quality section
-          SIZE_DESC_ANALYSIS="**Size Analysis**:
-          - Modified files: $NUM_FILES
+          # Build Quality Analysis
+          QUALITATIVE_ANALYSIS = "### Quality Analysis: " + "\n"
           
-          **Description Quality**:
-          "
+          QUALITATIVE_ANALYSIS += "- Modified files: $NUM_FILES" + "\n"
+          
           if [ "$BODY_WORD_COUNT" -ge 50 ]; then
-            SIZE_DESC_ANALYSIS="${SIZE_DESC_ANALYSIS}- ✅ Detailed ($BODY_WORD_COUNT words)"
+            QUALITATIVE_ANALYSIS += "- ✅ Detailed ($BODY_WORD_COUNT words)" + "\n"
           else
-            SIZE_DESC_ANALYSIS="${SIZE_DESC_ANALYSIS}- ⚠️ Brief ($BODY_WORD_COUNT words)"
+            QUALITATIVE_ANALYSIS += "- ⚠️ Brief ($BODY_WORD_COUNT words)" + "\n"
           fi
           
-          # Build Impact Analysis section
-          IMPACT_ANALYSIS="**Impact Analysis**:
-          - Total lines changed: $TOTAL_CHANGES
-          - Additions: $TOTAL_ADDITIONS
-          - Deletions: $TOTAL_DELETIONS
-          - Average changes per file: $AVG_CHANGES"
+          QUALITATIVE_ANALYSIS += "- Total lines changed: $TOTAL_CHANGES" + "\n"
+          QUALITATIVE_ANALYSIS += "- Additions: $TOTAL_ADDITIONS" + "\n"
+          QUALITATIVE_ANALYSIS += "- Deletions: $TOTAL_DELETIONS" + "\n"
+          QUALITATIVE_ANALYSIS += "- Average changes per file: $AVG_CHANGES" + "\n"
           
-          # Build Additional Suggestions section
-          ADDITIONAL_SUGGESTIONS="**Additional Suggestions**:"
           if echo "$FILES_LINKED" | grep -qi "README"; then
-            ADDITIONAL_SUGGESTIONS="${ADDITIONAL_SUGGESTIONS}
-          - Documentation updates detected."
+            QUALITATIVE_ANALYSIS += "- Documentation updates detected." + "\n"
           else
-            ADDITIONAL_SUGGESTIONS="${ADDITIONAL_SUGGESTIONS}
-          - No documentation updates detected. Consider updating docs if necessary."
-          fi
-          if [ "$TOTAL_CHANGES" -gt 500 ]; then
-            ADDITIONAL_SUGGESTIONS="${ADDITIONAL_SUGGESTIONS}
-          - ⚠️ High impact changes detected. Please review carefully."
+            QUALITATIVE_ANALYSIS += "- No documentation updates detected. Consider updating docs if necessary." + "\n"
           fi
           
-          # Combine all sections into one final analysis
-          QUALITATIVE_ANALYSIS="${SIZE_DESC_ANALYSIS}
-          ${IMPACT_ANALYSIS}
-          ${ADDITIONAL_SUGGESTIONS}"
+          if [ "$TOTAL_CHANGES" -gt 500 ]; then
+            QUALITATIVE_ANALYSIS += "- ⚠️ High impact changes detected. Please review carefully." + "\n"
+          fi
           
           COMMENT_BODY=$(jq -n \
             --arg pr_author "$PR_AUTHOR" \
