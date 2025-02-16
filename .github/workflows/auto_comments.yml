@@ -278,12 +278,12 @@ jobs:
           BODY_WORD_COUNT=$(echo "$PR_BODY" | wc -w)
           
           QUALITATIVE_ANALYSIS+=$'**Size Analysis**:\n'
-          QUALITATIVE_ANALYSIS+=$'- Modified files: '"$NUM_FILES"$'\n'
+          QUALITATIVE_ANALYSIS+=$'- Modified files: '"$NUM_FILES"$'\n\n'
           QUALITATIVE_ANALYSIS+=$'**Description Quality**:\n'
           if [ "$BODY_WORD_COUNT" -ge 50 ]; then
-            QUALITATIVE_ANALYSIS+=$'- ✅ Detailed ('"$BODY_WORD_COUNT"' words)\n'
+            QUALITATIVE_ANALYSIS+=$'- ✅ Detailed ('"$BODY_WORD_COUNT"' words)\n\n'
           else
-            QUALITATIVE_ANALYSIS+=$'- ⚠️ Brief ('"$BODY_WORD_COUNT"' words)\n'
+            QUALITATIVE_ANALYSIS+=$'- ⚠️ Brief ('"$BODY_WORD_COUNT"' words)\n\n'
           fi
       
           COMMENT_BODY=$(jq -n \
