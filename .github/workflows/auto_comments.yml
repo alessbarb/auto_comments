@@ -129,8 +129,15 @@ jobs:
       - name: 🛡️ Define Retry Function
         id: define-retry
         run: |
+          # Create a file named retry.sh that contains the retry function
           cat << 'EOF' > retry.sh
           #!/usr/bin/env bash
+
+          # Function: retry_command
+          # Parameters:
+          #  - $1 => The command to execute
+          #  - $2 => Max number of retries
+          #  - $3 => Wait time (in seconds) between retries
           retry_command() {
             local -r cmd="$1"
             local -r max_retries="$2"
@@ -140,9 +147,11 @@ jobs:
             while [[ $retry_count -lt $max_retries ]]; do
               echo "Executing: $cmd ... Attempt $(($retry_count + 1))"
               if eval "$cmd"; then
+                # If the command succeeds (exit code 0), exit the loop
                 return 0
               fi
               retry_count=$((retry_count + 1))
+              echo "Command failed. Waiting ${wait_time}s before next attempt..."
               sleep $wait_time
             done
 
@@ -150,35 +159,41 @@ jobs:
             return 1
           }
           EOF
+
+          # Make the script executable
           chmod +x retry.sh
-        shell: bash
 
       # (5) Build & Test (with retries)
       - name: ⚙️ Build & Test
         run: |
+          # Source the retry_command function from the script we created
           source ./retry.sh
 
           echo "PROJECT_TYPE=$PROJECT_TYPE"
+
+          # If the project type is unknown, skip build & test
           if [ "$PROJECT_TYPE" = "unknown" ]; then
+            echo "No recognized project files found. Skipping build & test."
             echo "TESTS_SUMMARY='No tests ran (unknown project type)'" >> $GITHUB_ENV
             echo "COVERAGE_REPORT='No coverage (unknown project type)'" >> $GITHUB_ENV
             exit 0
           fi
 
-          # Build with retries
+          # Retry Build Command (e.g., npm install, mvn clean package, etc.)
           if ! retry_command "${BUILD_COMMAND}" 3 5; then
-            echo "Build failed after retries"
+            echo "Build failed after retries."
             exit 1
           fi
 
-          # Test with retries
+          # Retry Test Command
           if ! retry_command "${TEST_COMMAND}" 3 5; then
-            echo "Tests failed after retries"
+            echo "Tests failed after retries."
             exit 1
           fi
 
-          # Example coverage for Node
+          # Example: Coverage logic for Node/Jest
           if [[ "$PROJECT_TYPE" == "node" || "$PROJECT_TYPE" == "node-yarn" ]]; then
+            echo "Checking coverage summary for Node..."
             COVERAGE_JSON="./coverage/coverage-summary.json"
             if [ -f "$COVERAGE_JSON" ]; then
               COVERAGE_PCT=$(jq '.total.lines.pct' "$COVERAGE_JSON")
@@ -187,15 +202,17 @@ jobs:
               echo "COVERAGE_REPORT='No coverage info found.'" >> $GITHUB_ENV
             fi
           elif [ "$PROJECT_TYPE" == "maven" ]; then
-            echo "COVERAGE_REPORT='Example: coverage from Jacoco'" >> $GITHUB_ENV
+            echo "COVERAGE_REPORT='Example: coverage from Jacoco (Maven)'" >> $GITHUB_ENV
           elif [ "$PROJECT_TYPE" == "gradle" ]; then
-            echo "COVERAGE_REPORT='Example: coverage from Jacoco Gradle'" >> $GITHUB_ENV
+            echo "COVERAGE_REPORT='Example: coverage from Jacoco (Gradle)'" >> $GITHUB_ENV
           elif [ "$PROJECT_TYPE" == "python" ]; then
             echo "COVERAGE_REPORT='Example: coverage from Pytest --cov'" >> $GITHUB_ENV
           fi
 
+          # Example: Save a successful test summary message
           echo "TESTS_SUMMARY='All tests passed (example)'" >> $GITHUB_ENV
         env:
+          # These variables would be defined in previous steps of your workflow
           PROJECT_TYPE: ${{ env.PROJECT_TYPE }}
           BUILD_COMMAND: ${{ env.BUILD_COMMAND }}
           TEST_COMMAND: ${{ env.TEST_COMMAND }}
