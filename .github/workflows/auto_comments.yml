@@ -158,56 +158,63 @@ jobs:
         with:
           path: ${{ env.CACHE_PATH }}
           key: ${{ runner.os }}-${{ env.PROJECT_TYPE }}-${{ hashFiles(env.DEPENDENCY_FILE) }}
-
-      # ========== BUILD & TEST ==========
+          
       - name: 🛠️ Build & Test
         run: |
+          # Cargar la función de reintentos
           source ./retry.sh
-
+      
           echo "PROJECT_TYPE=$PROJECT_TYPE"
-
+      
+          # Si el proyecto es desconocido, se asignan valores por defecto y se salta build & test
           if [ "$PROJECT_TYPE" = "unknown" ]; then
             echo "No recognized project files. Skipping build & test."
             echo "TEST_STATUS=No tests executed (unknown project type)" >> $GITHUB_ENV
-            echo "COVERAGE_REPORT='No coverage (unknown project type)'" >> $GITHUB_ENV
+            echo "COVERAGE=No coverage (unknown project type)" >> $GITHUB_ENV
             exit 0
           fi
-
-          # Retry Build Command
+      
+          # Ejecutar el comando de build con reintentos
           if ! retry_command "$BUILD_COMMAND" 3 5; then
             echo "Build failed after retries."
             exit 1
           fi
-
-          # Retry Test Command
+      
+          # Ejecutar el comando de test con reintentos
           if ! retry_command "$TEST_COMMAND" 3 5; then
             echo "Tests failed after retries."
             exit 1
           fi
-
-          # Capture more detailed logs
+      
           echo "Build and test steps completed."
-
-          # Try to get coverage summary
-          if [[ "$PROJECT_TYPE" == "node" || "$PROJECT_TYPE" == "node-yarn" ]]; then
-            COVERAGE_FILE="./coverage/coverage-summary.json"
-            if [ -f "$COVERAGE_FILE" ]; then
-              COVERAGE_PCT=$(jq '.total.lines.pct' "$COVERAGE_FILE")
-              echo "COVERAGE=Coverage: ${COVERAGE_PCT}%" >> $GITHUB_ENV
-            else
-              echo "COVERAGE=No coverage info found" >> $GITHUB_ENV
-            fi
-          else
-            echo "COVERAGE=No coverage info found (unknown project type)" >> $GITHUB_ENV
-          fi
-
+      
+          # Función para establecer la cobertura según el tipo de proyecto
+          set_coverage() {
+            case "$PROJECT_TYPE" in
+              node|node-yarn)
+                COVERAGE_FILE="./coverage/coverage-summary.json"
+                if [ -f "$COVERAGE_FILE" ]; then
+                  COVERAGE_PCT=$(jq '.total.lines.pct' "$COVERAGE_FILE")
+                  COVERAGE="Coverage: ${COVERAGE_PCT}%"
+                else
+                  COVERAGE="No coverage info found"
+                fi
+                ;;
+              *)
+                # Aquí se pueden agregar otros casos para diferentes tipos de proyectos
+                COVERAGE="No coverage info for project type: $PROJECT_TYPE"
+                ;;
+            esac
+          }
+      
+          set_coverage
+          echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
           echo "TEST_STATUS=All tests passed" >> $GITHUB_ENV
-
         env:
           PROJECT_TYPE: ${{ env.PROJECT_TYPE }}
           BUILD_COMMAND: ${{ env.BUILD_COMMAND }}
           TEST_COMMAND: ${{ env.TEST_COMMAND }}
-    
+
       # ========== CODE QUALITY ==========
       - name: 🧹 Lint Code
         run: |
