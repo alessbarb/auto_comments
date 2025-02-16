@@ -287,30 +287,29 @@ jobs:
             AVG_CHANGES=0
           fi
           
-          # Build Quality Analysis
-          QUALITATIVE_ANALYSIS = "### Quality Analysis: " + "\n"
-          
-          QUALITATIVE_ANALYSIS += "- Modified files: $NUM_FILES" + "\n"
+          # Build Quality Analysis section
+          QUALITATIVE_ANALYSIS="### Quality Analysis:\n"
+          QUALITATIVE_ANALYSIS+="- Modified files: $NUM_FILES\n"
           
           if [ "$BODY_WORD_COUNT" -ge 50 ]; then
-            QUALITATIVE_ANALYSIS += "- ✅ Detailed ($BODY_WORD_COUNT words)" + "\n"
+            QUALITATIVE_ANALYSIS+="- ✅ Detailed ($BODY_WORD_COUNT words)\n"
           else
-            QUALITATIVE_ANALYSIS += "- ⚠️ Brief ($BODY_WORD_COUNT words)" + "\n"
+            QUALITATIVE_ANALYSIS+="- ⚠️ Brief ($BODY_WORD_COUNT words)\n"
           fi
           
-          QUALITATIVE_ANALYSIS += "- Total lines changed: $TOTAL_CHANGES" + "\n"
-          QUALITATIVE_ANALYSIS += "- Additions: $TOTAL_ADDITIONS" + "\n"
-          QUALITATIVE_ANALYSIS += "- Deletions: $TOTAL_DELETIONS" + "\n"
-          QUALITATIVE_ANALYSIS += "- Average changes per file: $AVG_CHANGES" + "\n"
+          QUALITATIVE_ANALYSIS+="- Total lines changed: $TOTAL_CHANGES\n"
+          QUALITATIVE_ANALYSIS+="- Additions: $TOTAL_ADDITIONS\n"
+          QUALITATIVE_ANALYSIS+="- Deletions: $TOTAL_DELETIONS\n"
+          QUALITATIVE_ANALYSIS+="- Average changes per file: $AVG_CHANGES\n"
           
           if echo "$FILES_LINKED" | grep -qi "README"; then
-            QUALITATIVE_ANALYSIS += "- Documentation updates detected." + "\n"
+            QUALITATIVE_ANALYSIS+="- Documentation updates detected.\n"
           else
-            QUALITATIVE_ANALYSIS += "- No documentation updates detected. Consider updating docs if necessary." + "\n"
+            QUALITATIVE_ANALYSIS+="- No documentation updates detected. Consider updating docs if necessary.\n"
           fi
           
           if [ "$TOTAL_CHANGES" -gt 500 ]; then
-            QUALITATIVE_ANALYSIS += "- ⚠️ High impact changes detected. Please review carefully." + "\n"
+            QUALITATIVE_ANALYSIS+="- ⚠️ High impact changes detected. Please review carefully.\n"
           fi
           
           COMMENT_BODY=$(jq -n \
