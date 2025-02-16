@@ -23,14 +23,14 @@ jobs:
       DEBUG: "false"
 
     steps:
-      # (1) Verificar/instalar jq y curl solo si faltan
+      # (1) Verify/install jq & curl if missing
       - name: 🛠️ Prepare Dependencies
         run: |
           echo "Checking jq and curl..."
-          which jq || sudo apt-get update && sudo apt-get install -y jq
-          which curl || sudo apt-get update && sudo apt-get install -y curl
+          which jq || (sudo apt-get update && sudo apt-get install -y jq)
+          which curl || (sudo apt-get update && sudo apt-get install -y curl)
 
-      # (2) Validar datos de entrada
+      # (2) Validate critical input data
       - name: 🛡️ Validate Input Data
         run: |
           echo "Validating input data: REPO=$REPO, PR_ID=$PR_ID, PR_BRANCH=$PR_BRANCH"
@@ -44,11 +44,11 @@ jobs:
           fi
           echo "Input data validated successfully."
 
-      # (3) Checkout
+      # (3) Checkout the code
       - name: 📥 Checkout Code
         uses: actions/checkout@v3
 
-      # (4) Detectar tipo de proyecto y comandos
+      # (4) Detect project type & commands
       - name: 🔍 Detect Project Type
         id: detect
         run: |
@@ -97,7 +97,7 @@ jobs:
             echo "DEPENDENCY_FILE=''" >> $GITHUB_ENV
             echo "CACHE_PATH=''" >> $GITHUB_ENV
 
-      # (4.1) Prepara variables para el cache
+      # (4.1) Prepare cache info
       - name: 🔑 Prepare Cache Key
         id: prepare-cache
         run: |
@@ -125,7 +125,7 @@ jobs:
           key: ${{ runner.os }}-${{ env.PROJECT_TYPE }}-${{ hashFiles(steps.prepare-cache.outputs.dependency-file) }}
         continue-on-error: true
 
-      # Función para reintentos de build/test
+      # Retry function for build/test
       - name: 🛡️ Define Retry Function
         id: define-retry
         run: |
@@ -153,7 +153,7 @@ jobs:
           chmod +x retry.sh
         shell: bash
 
-      # (5) Build & Test (con reintentos)
+      # (5) Build & Test (with retries)
       - name: ⚙️ Build & Test
         run: |
           source ./retry.sh
@@ -165,19 +165,19 @@ jobs:
             exit 0
           fi
 
-          # Build con reintentos
+          # Build with retries
           if ! retry_command "${BUILD_COMMAND}" 3 5; then
             echo "Build failed after retries"
             exit 1
           fi
 
-          # Test con reintentos
+          # Test with retries
           if ! retry_command "${TEST_COMMAND}" 3 5; then
             echo "Tests failed after retries"
             exit 1
           fi
 
-          # Ejemplo: coverage en Node
+          # Example coverage for Node
           if [[ "$PROJECT_TYPE" == "node" || "$PROJECT_TYPE" == "node-yarn" ]]; then
             COVERAGE_JSON="./coverage/coverage-summary.json"
             if [ -f "$COVERAGE_JSON" ]; then
@@ -200,10 +200,10 @@ jobs:
           BUILD_COMMAND: ${{ env.BUILD_COMMAND }}
           TEST_COMMAND: ${{ env.TEST_COMMAND }}
 
-      # (6) Lint con falla de pipeline si hay errores
+      # (6) Lint (fail pipeline if errors)
       - name: 🧹 Lint
         run: |
-          set -e  # fail fast
+          set -e  # fail fast on error
           if [ "$PROJECT_TYPE" = "unknown" ]; then
             echo "LINTER_RESULTS='No lint (unknown project type)'" >> $GITHUB_ENV
             exit 0
@@ -223,7 +223,7 @@ jobs:
           echo "COMMIT_SHA=$COMMIT_SHA" >> $GITHUB_ENV
           echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
 
-      # (8) Gather PR Details
+      # (8) Gather PR details
       - name: 📊 Gather PR Details
         id: pr_details
         run: |
@@ -265,7 +265,7 @@ jobs:
             echo EOF
           } >> "$GITHUB_ENV"
 
-      # (9) Workflow status
+      # (9) Workflow status steps
       - name: ✔️ Workflow Status = Success
         if: success()
         run: |
@@ -278,10 +278,12 @@ jobs:
           echo "WORKFLOW_STATUS=failure" >> $GITHUB_ENV
           exit 1
 
-      # (10) Comentar en el PR con Markdown
+      # (10) Add PR Comment with Markdown
       - name: 📝 Add Comment to PR
         run: |
-          FILES_LINKED=$(echo "$FILES_LINKED" | sed -E 's/["“”]/\\"/g')
+          # Escape backticks & quotes in both PR_BODY and FILES_LINKED
+          FILES_LINKED=$(echo "$FILES_LINKED" | sed -E 's/["“”]/\\"/g; s/`/´/g')
+          PR_BODY=$(echo "$PR_BODY" | sed -E 's/["“”]/\\"/g; s/`/´/g')
 
           COMMENT_BODY=$(jq -n \
             --arg pr_author "$PR_AUTHOR" \
@@ -322,7 +324,7 @@ jobs:
             exit 1
           fi
 
-          # Truncación simple
+          # Simple truncation if body > 65536 chars
           if [[ ${#COMMENT_BODY} -gt 65536 ]]; then
             echo "Comment body exceeds 65536 characters. Truncating..."
             COMMENT_BODY="${COMMENT_BODY:0:65532}...)"
@@ -338,7 +340,7 @@ jobs:
 
           echo "Comment added to PR successfully."
 
-      # (11) Debug logs
+      # (11) Debug Logs
       - name: 🐛 Debug Logs
         if: env.DEBUG == 'true'
         run: |
