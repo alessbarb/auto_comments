@@ -1,49 +1,48 @@
 # Auto-comment on PR GitHub Action
 
-This GitHub Action automatically adds a comment to newly opened or synchronized pull requests. The comment will contain details about the PR, including the title, body, labels, and a list of files changed.
+This GitHub Action automatically adds a comment to newly opened or synchronized pull requests. It pulls details like the PR title, body, labels, and file changes, then posts all that info as a comment in the PR.
 
 ## Features
 
-- Automatically triggered when a PR is opened or synchronized.
-- Collects data about the PR using GitHub's API.
-- Adds a comment to the PR with all the collected information.
-- Implements a retry mechanism for API calls.
-- Uses `jq` for JSON parsing and `curl` for API requests.
+- Automatically triggered when a pull request is opened or updated.
+- Collects PR metadata using the GitHub API (labels, files changed, etc.).
+- Writes a consolidated comment back to the PR, including file-level details.
+- Retries API calls to handle transient errors.
+- Leverages `jq` for JSON parsing and `curl` for HTTP requests.
 
 ## Prerequisites
 
-- GitHub Token with permissions to write to pull requests.
-- `jq` and `curl` installed on the runner machine.
+- A GitHub Token (`GITHUB_TOKEN`) with permission to write to pull requests.
+- The runner must have `jq` and `curl` installed (the workflow installs them if needed).
 
 ## Workflow Configuration
 
 ### Environment Variables
 
-- `GITHUB_TOKEN`: GitHub token for API authentication.
-- `REPO`: GitHub repository where the action is running.
-- `PR_AUTHOR`: Author of the pull request.
-- `PR_ID`: Pull request ID.
-- `PR_BRANCH`: Branch from which the pull request was made.
-- `PR_TITLE`: Title of the pull request.
-- `PR_BODY`: Body content of the pull request.
-- `DEBUG`: Debug mode toggle (default is `false`).
+- **`GITHUB_TOKEN`**: The token used to authenticate GitHub API calls.
+- **`REPO`**: The `owner/repo` string for the repository where the action runs.
+- **`PR_AUTHOR`**: The GitHub username of the PR’s author.
+- **`PR_ID`**: The pull request number.
+- **`PR_BRANCH`**: The branch from which the pull request was created.
+- **`PR_TITLE`**: The title of the pull request.
+- **`PR_URL`**: The direct URL of the pull request.
+- **`PR_BODY`**: The description/body text of the PR.
+- **`DEBUG`**: Controls debug logs (default is `false`).
 
 ### Steps
 
-1. **🛠️ Prepare Dependencies**: Installs `jq` and `curl`.
-2. **🛡️ Validate Input Data**: Checks that all required environment variables are set.
-3. **📥 Checkout Code**: Checks out the repository code.
-4. **📊 Gather PR Details**: Collects details about the PR, such as labels and files changed.
-5. **✔️ Workflow Status = Success**: Sets the workflow status to `success` if all steps are successful.
-6. **❌ Error Handling**: Sets the workflow status to `failure` and logs errors if any step fails.
-7. **📝 Add Comment to PR**: Adds the generated comment to the PR.
-8. **🐛 Debug Logs**: Optional debugging logs.
+1. **🛠️ Prepare Dependencies**: Installs `jq` and `curl` on the runner.
+2. **🛡️ Validate Input Data**: Ensures that necessary variables (`REPO`, `PR_ID`, `PR_BRANCH`, and `GITHUB_TOKEN`) are present.
+3. **📥 Checkout Code**: Uses `actions/checkout@v3` to fetch the repository contents.
+4. **📊 Gather PR Details**: Pulls labels and changed files from the GitHub API, retrying on transient errors.
+5. **✔️ Workflow Status = Success**: Sets a success status if everything completes without errors.
+6. **❌ Error Handling**: Marks the workflow as failed if any step fails.
+7. **📝 Add Comment to PR**: Builds a detailed comment with all collected PR info and posts it to the PR.
+8. **🐛 Debug Logs**: Prints additional information if `DEBUG` is set to `true`.
 
 ## Usage
 
-Add this YAML configuration to your `.github/workflows` directory as a new YAML file (e.g., `auto-comment-on-pr.yml`).
-
-Here's the workflow configuration:
+Create a new file under `.github/workflows`, for example `auto-comment-on-pr.yml`, and add the following:
 
 ```yaml
 name: Auto-comment on PR
@@ -70,7 +69,6 @@ jobs:
       DEBUG: "${{ github.event.inputs.debug || 'false' }}"  
 
     steps:
-    # Preparation Phase: Installing dependencies needed for the workflow
     - name: 🛠️ Prepare Dependencies
       run: |
         echo "Installing jq and curl..."
@@ -78,33 +76,27 @@ jobs:
           echo "Failed to install jq and curl. Exiting."
           exit 1
         fi
-        echo "Dependencies installed."
 
-    # Input Validation: Check if all required variables are present
     - name: 🛡️ Validate Input Data
       run: |
         echo "Validating input data: REPO=$REPO, PR_ID=$PR_ID, PR_BRANCH=$PR_BRANCH"
         if [[ -z "$REPO" || -z "$PR_ID" || -z "$PR_BRANCH" ]]; then
-          echo "Invalid input data. REPO, PR_ID o PR_BRANCH están vacíos."
+          echo "Invalid input data. REPO, PR_ID, or PR_BRANCH is empty."
           exit 1
         fi
 
         if [[ -z "$GITHUB_TOKEN" ]]; then
-          echo "GITHUB_TOKEN está vacío. No se puede continuar."
+          echo "GITHUB_TOKEN is empty. Cannot continue."
           exit 1
         fi
 
-        echo "Input data validated successfully."
-
-    # Checkout Code (migración a la versión más reciente)
     - name: 📥 Checkout Code
       uses: actions/checkout@v3
 
-    # Data Gathering Phase: Collect PR details such as labels and files changed
     - name: 📊 Gather PR Details
       id: pr_details
       run: |
-        # Define Retry Function
+        # Retry function to handle transient errors
         retry_command() {
           local -r cmd="$1"
           local -r max_retries="$2"
@@ -113,7 +105,7 @@ jobs:
           local retry_count=0
 
           while [[ $retry_count -lt $max_retries ]]; do
-            echo "Executing: $cmd... Attempt $(($retry_count + 1))"
+            echo "Executing: $cmd... Attempt $((retry_count + 1))"
             result_ref=$(eval $cmd)
             if [[ $? -eq 0 ]]; then
               return 0
@@ -122,44 +114,29 @@ jobs:
             sleep $wait_time
           done
 
-          echo "Failed to execute $cmd after $max_retries attempts. Exiting."
+          echo "Failed to execute $cmd after $max_retries attempts."
           exit 1
         }
 
-        # Initialize or clean up files_linked.txt
-        echo "Initializing or cleaning up files_linked.txt..."
+        # Prepare output file
         > files_linked.txt
 
-        # Fetch PR labels
-        echo "Fetching PR labels..."
+        # Extract labels using jq
         PR_LABELS=$(jq -r '.pull_request.labels[]?.name' "$GITHUB_EVENT_PATH" | tr '\n' ', ') || exit 1
-        if [[ $? -ne 0 ]]; then
-          echo "Failed to fetch PR labels using jq. Exiting."
-          exit 1
-        fi
         echo "PR_LABELS=$PR_LABELS" >> "$GITHUB_ENV"
 
-        # Define GitHub API Base URL
+        # Fetch changed files
         GITHUB_API_BASE_URL="https://api.github.com"
-
-        # Fetch Files Changed details
         retry_command "curl -s -H \"Authorization: token $GITHUB_TOKEN\" $GITHUB_API_BASE_URL/repos/$REPO/pulls/$PR_ID/files" 3 5 FILES_JSON
 
         if [[ -z "$FILES_JSON" ]]; then
-          echo "FILES_JSON is empty, which is unexpected. Exiting."
+          echo "FILES_JSON is empty, exiting."
           exit 1
         fi
 
-        FILES_LINKED=""
         REPO_URL="https://github.com/$REPO/blob/$PR_BRANCH"
-
-        # Iterate through each file to get details
-        echo "Iterating through each file to get details..."
         for row in $(echo "${FILES_JSON}" | jq -r '.[] | @base64'); do
-          _jq() {
-            echo ${row} | base64 --decode | jq -r ${1}
-          }
-
+          _jq() { echo ${row} | base64 --decode | jq -r ${1}; }
           FILE_NAME=$(_jq '.filename')
           ADDITIONS=$(_jq '.additions')
           DELETIONS=$(_jq '.deletions')
@@ -174,29 +151,19 @@ jobs:
           echo EOF
         } >> "$GITHUB_ENV"
 
-        echo "PR details gathered successfully."
-
-    # Workflow Status Phase
     - name: ✔️ Workflow Status = Success
       if: success()
-      run: |
-        echo "WORKFLOW_STATUS=success" >> $GITHUB_ENV
-        echo "Workflow completed successfully."
+      run: echo "WORKFLOW_STATUS=success" >> $GITHUB_ENV
 
-    - name: ❌ Error Handling (Workflow Status = Failure)
+    - name: ❌ Error Handling
       if: failure()
       run: |
         echo "WORKFLOW_STATUS=failure" >> $GITHUB_ENV
-        echo "An error occurred. Check the logs for specific failure points."
         exit 1
 
-    # Finalization Phase
     - name: 📝 Add Comment to PR
       run: |
         FILES_LINKED=$(echo "$FILES_LINKED" | sed -E 's/["“”]/\\"/g')
-
-        # Preparing comment body for posting
-        echo "Preparing comment body..."
         COMMENT_BODY=$(jq -n \
                         --arg pr_author "$PR_AUTHOR" \
                         --arg pr_title "$PR_TITLE" \
@@ -220,28 +187,23 @@ jobs:
                           )
                         }')
 
-        # Validate comment body before posting
-        echo "Validating comment body..."
+        # Validate comment body
         if [[ -z "$COMMENT_BODY" ]]; then
-          echo "Comment body is empty. Aborting."
+          echo "Comment body is empty. Exiting."
           exit 1
         fi
 
+        # Avoid exceeding GitHub's character limit
         if [[ ${#COMMENT_BODY} -gt 65536 ]]; then
-          echo "Comment body exceeds 65536 characters. Truncating..."
           COMMENT_BODY="${COMMENT_BODY:0:65532}...)"
         fi
 
-        # Posting comment to PR
-        echo "Posting comment to PR..."
-        curl \
-          -X POST \
-          -H "Authorization: token $GITHUB_TOKEN" \
-          -H "Content-Type: application/json" \
-          -d "$COMMENT_BODY" \
-          "https://api.github.com/repos/$REPO/issues/$PR_ID/comments"
-
-        echo "Comment added to PR successfully."
+        # Post comment
+        curl -X POST \
+             -H "Authorization: token $GITHUB_TOKEN" \
+             -H "Content-Type: application/json" \
+             -d "$COMMENT_BODY" \
+             "https://api.github.com/repos/$REPO/issues/$PR_ID/comments"
 
     - name: 🐛 Debug Logs
       if: env.DEBUG == 'true'
@@ -252,18 +214,17 @@ jobs:
         echo "PR_BRANCH: $PR_BRANCH"
         echo "PR_LABELS: $PR_LABELS"
         echo "FILES_JSON: $FILES_JSON"
-        echo "======================"
+
 ```
 
 ## Debugging
 
-Set the `DEBUG` environment variable to `true` for additional logs.
+Set `DEBUG` to `true` in the environment variables if you need extra logs for troubleshooting.
 
 ## Limitations
 
-- Comment body size must not exceed 65536 characters.
+- The comment body cannot exceed 65,536 characters (GitHub’s limit).
 
 ## Contributing
 
-Feel free to contribute to this GitHub Action by opening issues or submitting pull requests.
-
+Issues and pull requests are welcome. Feel free to propose enhancements, bug fixes, or additional features to make this action even more useful.
