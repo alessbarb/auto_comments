@@ -73,11 +73,29 @@ jobs:
               echo "LINT_COMMAND=npm run lint" >> $GITHUB_ENV
               echo "DEPENDENCY_FILE=package-lock.json" >> $GITHUB_ENV
               ;;
-            maven|gradle|python)
-              # Commands for other project types
+            maven)
+              echo "BUILD_COMMAND=mvn clean package" >> $GITHUB_ENV
+              echo "TEST_COMMAND=mvn test" >> $GITHUB_ENV
+              echo "LINT_COMMAND=mvn checkstyle:check" >> $GITHUB_ENV
+              echo "DEPENDENCY_FILE=pom.xml" >> $GITHUB_ENV
+              ;;
+            gradle)
+              echo "BUILD_COMMAND=gradle build" >> $GITHUB_ENV
+              echo "TEST_COMMAND=gradle test" >> $GITHUB_ENV
+              echo "LINT_COMMAND=gradle check" >> $GITHUB_ENV
+              echo "DEPENDENCY_FILE=build.gradle" >> $GITHUB_ENV
+              ;;
+            python)
+              echo "BUILD_COMMAND=pip install -r requirements.txt" >> $GITHUB_ENV
+              echo "TEST_COMMAND=pytest" >> $GITHUB_ENV
+              echo "LINT_COMMAND=flake8 ." >> $GITHUB_ENV
+              echo "DEPENDENCY_FILE=requirements.txt" >> $GITHUB_ENV
               ;;
             *)
-              echo "BUILD_COMMAND=echo 'No build command'" >> $GITHUB_ENV
+              echo "BUILD_COMMAND=echo 'No build command (unknown project type)'" >> $GITHUB_ENV
+              echo "TEST_COMMAND=echo 'No test command (unknown project type)'" >> $GITHUB_ENV
+              echo "LINT_COMMAND=echo 'No lint command (unknown project type)'" >> $GITHUB_ENV
+              echo "DEPENDENCY_FILE=" >> $GITHUB_ENV
               ;;
           esac
 
@@ -92,7 +110,10 @@ jobs:
       - name: 🔑 Prepare Cache
         run: |
           case $PROJECT_TYPE in
-            node*)
+            node-yarn)
+              echo "CACHE_PATH=~/.cache/yarn" >> $GITHUB_ENV
+              ;;
+            node)
               echo "CACHE_PATH=~/.npm" >> $GITHUB_ENV
               ;;
             maven)
@@ -103,6 +124,9 @@ jobs:
               ;;
             python)
               echo "CACHE_PATH=~/.cache/pip" >> $GITHUB_ENV
+              ;;
+            *)
+              echo "CACHE_PATH=" >> $GITHUB_ENV
               ;;
           esac
 
@@ -116,65 +140,146 @@ jobs:
       # ========== BUILD & TEST ==========
       - name: 🛠️ Build & Test
         run: |
-          max_retries=3
-          retry_command() {
-            local cmd=$1
-            local attempt=0
-            until eval "$cmd"; do
-              ((attempt++))
-              if [[ $attempt -ge $max_retries ]]; then
-                echo "Command failed after $max_retries attempts"
-                return 1
-              fi
-              echo "Retrying... ($attempt/$max_retries)"
-              sleep 5
-            done
-          }
+          source ./retry.sh
+          if [ "$PROJECT_TYPE" = "unknown" ]; then
+            echo "No recognized project files. Skipping build & test."
+            echo "TEST_STATUS=No tests executed (unknown project type)" >> $GITHUB_ENV
+            echo "COVERAGE=N/A" >> $GITHUB_ENV
+            exit 0
+          fi
 
-          retry_command "$BUILD_COMMAND"
-          retry_command "$TEST_COMMAND"
+          if ! retry_command "$BUILD_COMMAND" 3 5; then
+            echo "Build failed after retries."
+            exit 1
+          fi
+
+          if ! retry_command "$TEST_COMMAND" 3 5; then
+            echo "Tests failed after retries."
+            exit 1
+          fi
+
+          # Para proyectos Node, intentar obtener resumen de cobertura
+          if [[ "$PROJECT_TYPE" == "node" || "$PROJECT_TYPE" == "node-yarn" ]]; then
+            COVERAGE_FILE="./coverage/coverage-summary.json"
+            if [ -f "$COVERAGE_FILE" ]; then
+              COVERAGE_PCT=$(jq '.total.lines.pct' "$COVERAGE_FILE")
+              echo "COVERAGE=Coverage: ${COVERAGE_PCT}%" >> $GITHUB_ENV
+            else
+              echo "COVERAGE=No coverage info found." >> $GITHUB_ENV
+            fi
+          else
+            echo "COVERAGE=N/A" >> $GITHUB_ENV
+          fi
+
+          echo "TEST_STATUS=All tests passed" >> $GITHUB_ENV
 
       # ========== CODE QUALITY ==========
       - name: 🧹 Lint Code
-        if: env.PROJECT_TYPE != 'unknown'
-        run: ${{ env.LINT_COMMAND }}
-
+        run: |
+          if [ "$PROJECT_TYPE" = "unknown" ]; then
+            echo "LINT_STATUS=No lint (unknown project type)" >> $GITHUB_ENV
+          else
+            if eval "$LINT_COMMAND"; then
+              echo "LINT_STATUS=Lint passed successfully!" >> $GITHUB_ENV
+            else
+              echo "LINT_STATUS=Lint errors detected!" >> $GITHUB_ENV
+              exit 1
+            fi
+          fi
+          
       # ========== GATHER DATA ==========
       - name: 📊 Collect Metadata
         run: |
-          echo "COMMIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
-          echo "COMMIT_MESSAGE=$(git log -1 --pretty=%B)" >> $GITHUB_ENV
+          COMMIT_SHA=$(git rev-parse HEAD)
+          COMMIT_MESSAGE=$(git log -1 --pretty=%B)
+          echo "COMMIT_SHA=$COMMIT_SHA" >> $GITHUB_ENV
+          echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
 
       - name: 📌 Get PR Details
         id: pr-details
         run: |
-          PR_LABELS=$(jq -r '.pull_request.labels[].name' "$GITHUB_EVENT_PATH" | tr '\n' ', ')
+          source ./retry.sh
+          PR_LABELS=$(jq -r '.pull_request.labels[]?.name' "$GITHUB_EVENT_PATH" | tr '\n' ', ')
           echo "PR_LABELS=${PR_LABELS%,}" >> $GITHUB_ENV
 
+          FILES_JSON=$(curl -s -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$REPO/pulls/$PR_ID/files")
+          if [ -z "$FILES_JSON" ]; then
+            echo "Failed to retrieve PR files."
+            exit 1
+          fi
+
+          REPO_URL="https://github.com/$REPO/blob/$PR_BRANCH"
+          > files_linked.txt
+          for row in $(echo "$FILES_JSON" | jq -r '.[] | @base64'); do
+            _jq() {
+              echo ${row} | base64 --decode | jq -r ${1}
+            }
+            FILE_NAME=$(_jq '.filename')
+            ADDITIONS=$(_jq '.additions')
+            DELETIONS=$(_jq '.deletions')
+            CHANGES=$(_jq '.changes')
+            echo "- [$FILE_NAME]($REPO_URL/$FILE_NAME) (Additions: $ADDITIONS, Deletions: $DELETIONS, Changes: $CHANGES)" >> files_linked.txt
+          done
+
+          FILES_LINKED=$(cat files_linked.txt)
+          {
+            echo "FILES_LINKED<<EOF"
+            echo "$FILES_LINKED"
+            echo "EOF"
+          } >> $GITHUB_ENV
+ 
       # ========== NOTIFICATION ==========
       - name: 💬 Post PR Comment
         env:
           COMMENT_TITLE: "## 🤖 Automated PR Analysis"
         run: |
-          COMMENT_BODY=$(cat <<EOF
-          $COMMENT_TITLE
-          **Author**: @$PR_AUTHOR
-          **Status**: ${{ job.status }}
-
-          ### 📝 Summary
-          - Tests: ${{ env.TEST_STATUS || 'Not executed' }}
-          - Linting: ${{ env.LINT_STATUS || 'Not executed' }}
-          - Coverage: ${{ env.COVERAGE || 'N/A' }}
-
-          [View Details]($PR_URL)
-          EOF
-          )
+          # Escapar comillas y backticks en variables que puedan contener caracteres especiales
+          FILES_LINKED_ESCAPED=$(echo "$FILES_LINKED" | sed -E 's/["“”]/\\"/g; s/`/´/g')
+          PR_BODY_ESCAPED=$(echo "$PR_BODY" | sed -E 's/["“”]/\\"/g; s/`/´/g')
+          
+          COMMENT_BODY=$(jq -n \
+            --arg pr_author "$PR_AUTHOR" \
+            --arg pr_title "$PR_TITLE" \
+            --arg pr_url "$PR_URL" \
+            --arg pr_body "$PR_BODY_ESCAPED" \
+            --arg pr_labels "$PR_LABELS" \
+            --arg workflow_status "${{ job.status }}" \
+            --arg files_linked "$FILES_LINKED_ESCAPED" \
+            --arg lint_results "$LINT_STATUS" \
+            --arg test_summary "$TEST_STATUS" \
+            --arg coverage "$COVERAGE" \
+            --arg commit_sha "$COMMIT_SHA" \
+            --arg commit_msg "$COMMIT_MESSAGE" \
+            '{
+              body: (
+                "Hey @" + $pr_author + ",\n\n" +
+                "## 🚀 Pull Request Summary\n" +
+                "**Title**: " + $pr_title + "\n" +
+                "**PR URL**: " + $pr_url + "\n" +
+                "**PR Body**: " + $pr_body + "\n" +
+                "**Labels**: " + $pr_labels + "\n" +
+                "**Workflow Status**: " + $workflow_status + "\n\n" +
+                "### Files Changed\n" + $files_linked + "\n\n" +
+                "### Lint Results\n" + $lint_results + "\n\n" +
+                "### Test Summary\n" + $test_summary + "\n\n" +
+                "### Coverage Report\n" + $coverage + "\n\n" +
+                "**Last Commit SHA**: " + $commit_sha + "\n" +
+                "**Commit Message**: " + $commit_msg + "\n\n" +
+                ":sparkles: Please ensure all tests and checks pass.\n" +
+                "[View PR Details](" + $pr_url + ")"
+              )
+            }')
+          
+          # Truncar si excede el límite de GitHub
+          if [[ ${#COMMENT_BODY} -gt 65536 ]]; then
+            COMMENT_BODY="${COMMENT_BODY:0:65532}...)"
+          fi
 
           curl -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/$REPO/issues/$PR_ID/comments" \
-            -d "{\"body\":\"$COMMENT_BODY\"}"
+            -H "Content-Type: application/json" \
+            -d "$COMMENT_BODY" \
+            "https://api.github.com/repos/$REPO/issues/$PR_ID/comments"
 
       # ========== DEBUGGING ==========
       - name: 🐛 Debug Info
