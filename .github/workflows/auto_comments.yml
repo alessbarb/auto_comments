@@ -313,13 +313,14 @@ jobs:
                 "## 🚀 Pull Request Summary\n" +
                 "**Title**: " + $pr_title + "\n" +
                 "**PR URL**: " + $pr_url + "\n" +
-                "**PR Body**: " + $pr_body + "\n" +
+                "**PR Body**: " + "\n" + $pr_body + "\n\n" +
                 "**Labels**: " + $pr_labels + "\n" +
                 "**Workflow Status**: " + $workflow_status + "\n\n" +
                 "### Files Changed\n" + $files_linked + "\n\n" +
                 "### Lint Results\n" + $lint_results + "\n\n" +
                 "### Test Summary\n" + $test_summary + "\n\n" +
                 "### Coverage Report\n" + $coverage + "\n\n" +
+                "### Qualitative Analysis\n" + ($analysis | gsub("\\n";"\n")) + "\n\n" +
                 "**Last Commit SHA**: " + $commit_sha + "\n" +
                 "**Commit Message**: " + $commit_msg + "\n\n" +
                 ":sparkles: Please ensure all tests and checks pass.\n" +
