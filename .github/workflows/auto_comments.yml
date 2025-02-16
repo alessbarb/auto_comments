@@ -37,6 +37,28 @@ jobs:
       - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
+      - name: 🛡️ Define Retry Function
+        run: |
+          cat <<'EOF' > retry.sh
+          #!/usr/bin/env bash
+          retry_command() {
+            local cmd="$1"
+            local max_retries="$2"
+            local wait_time="$3"
+            local attempt=0
+            until eval "$cmd"; do
+              attempt=$((attempt+1))
+              if [ $attempt -ge $max_retries ]; then
+                echo "Command failed after $max_retries attempts"
+                return 1
+              fi
+              echo "Retrying... ($attempt/$max_retries)"
+              sleep $wait_time
+            done
+          }
+          EOF
+          chmod +x retry.sh
+
       # ========== PROJECT DETECTION ==========
       - name: 🔍 Detect Project Type
         id: detect-project
