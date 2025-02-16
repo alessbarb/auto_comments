@@ -277,16 +277,20 @@ jobs:
           BODY_WORD_COUNT=$(echo "$PR_BODY" | wc -w)
           QUALITATIVE_ANALYSIS=""
           if [ "$NUM_FILES" -gt 10 ]; then
-            QUALITATIVE_ANALYSIS+="This PR changes a large number of files ($NUM_FILES). Please review carefully for potential side effects.\n"
+            QUALITATIVE_ANALYSIS="This PR changes a large number of files ($NUM_FILES). Please review carefully for potential side effects.
+      "
           else
-            QUALITATIVE_ANALYSIS+="This PR changes a moderate number of files ($NUM_FILES).\n"
+            QUALITATIVE_ANALYSIS="This PR changes a moderate number of files ($NUM_FILES).
+      "
           fi
           if [ "$BODY_WORD_COUNT" -ge 50 ]; then
-            QUALITATIVE_ANALYSIS+="The PR description appears detailed ($BODY_WORD_COUNT words).\n"
+            QUALITATIVE_ANALYSIS="${QUALITATIVE_ANALYSIS}The PR description appears detailed ($BODY_WORD_COUNT words).
+      "
           else
-            QUALITATIVE_ANALYSIS+="The PR description is brief ($BODY_WORD_COUNT words). Consider adding more context.\n"
+            QUALITATIVE_ANALYSIS="${QUALITATIVE_ANALYSIS}The PR description is brief ($BODY_WORD_COUNT words). Consider adding more context.
+      "
           fi
-      
+          
           COMMENT_BODY=$(jq -n \
             --arg pr_author "$PR_AUTHOR" \
             --arg pr_title "$PR_TITLE" \
