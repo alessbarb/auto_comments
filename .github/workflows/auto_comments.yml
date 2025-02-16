@@ -273,19 +273,25 @@ jobs:
           PR_BODY_ESCAPED=$(echo "$PR_BODY" | sed -E 's/["“”]/\\"/g; s/`/´/g')
           
           # Qualitative analysis of the PR
+          QUALITATIVE_ANALYSIS=$''
           NUM_FILES=$(echo "$FILES_LINKED" | grep -c "\- \[")
           BODY_WORD_COUNT=$(echo "$PR_BODY" | wc -w)
-          QUALITATIVE_ANALYSIS=""
+          
+          QUALITATIVE_ANALYSIS+=$'**Size Analysis**:\n'
           if [ "$NUM_FILES" -gt 10 ]; then
-            QUALITATIVE_ANALYSIS="This PR changes a large number of files ($NUM_FILES). Please review carefully for potential side effects." + '\n'
+            QUALITATIVE_ANALYSIS+=$'- Large change: '$(printf "%d files modified\n" $NUM_FILES)
           else
-            QUALITATIVE_ANALYSIS="This PR changes a moderate number of files ($NUM_FILES)." + '\n'
+            QUALITATIVE_ANALYSIS+=$'- Moderate change: '$(printf "%d files modified\n" $NUM_FILES)
           fi
+          
+          QUALITATIVE_ANALYSIS+=$'\n**Description Quality**:\n'
           if [ "$BODY_WORD_COUNT" -ge 50 ]; then
-            QUALITATIVE_ANALYSIS="${QUALITATIVE_ANALYSIS}The PR description appears detailed ($BODY_WORD_COUNT words)." + '\n'
+            QUALITATIVE_ANALYSIS+=$'- Detailed description ('$BODY_WORD_COUNT' words)'
           else
-            QUALITATIVE_ANALYSIS="${QUALITATIVE_ANALYSIS}The PR description is brief ($BODY_WORD_COUNT words). Consider adding more context." + '\n'
+            QUALITATIVE_ANALYSIS+=$'- Brief description ('$BODY_WORD_COUNT' words). Consider adding:\n  - Context\n  - Motivation\n  - Implementation details'
           fi
+
+          FORMATTED_ANALYSIS=$(printf "%s" "$QUALITATIVE_ANALYSIS" | jq -Rs .)
           
           COMMENT_BODY=$(jq -n \
             --arg pr_author "$PR_AUTHOR" \
@@ -300,7 +306,7 @@ jobs:
             --arg coverage "$COVERAGE" \
             --arg commit_sha "$COMMIT_SHA" \
             --arg commit_msg "$COMMIT_MESSAGE" \
-            --arg analysis "$QUALITATIVE_ANALYSIS" \
+            --arg analysis "$FORMATTED_ANALYSIS" \
             '{
               body: (
                 "Hey @" + $pr_author + ",\n\n" +
@@ -314,7 +320,6 @@ jobs:
                 "### Lint Results\n" + $lint_results + "\n\n" +
                 "### Test Summary\n" + $test_summary + "\n\n" +
                 "### Coverage Report\n" + $coverage + "\n\n" +
-                "### Qualitative Analysis\n" + $analysis + "\n\n" +
                 "**Last Commit SHA**: " + $commit_sha + "\n" +
                 "**Commit Message**: " + $commit_msg + "\n\n" +
                 ":sparkles: Please ensure all tests and checks pass.\n" +
