@@ -46,7 +46,7 @@ jobs:
 
       # (3) Checkout the code
       - name: 📥 Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # (4) Detect project type & commands
       - name: 🔍 Detect Project Type
