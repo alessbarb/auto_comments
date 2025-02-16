@@ -9,4 +9,6 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"  # Location of your workflow files
     schedule:
-      interval: "weekly"
+      interval: "daily"
+    target-branch: "development"
+    
