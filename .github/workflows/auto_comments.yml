@@ -324,7 +324,7 @@ jobs:
                 "**Title**: " + $pr_title + "\n" +
                 "**URL**: " + $pr_url + "\n" +
                 "**Labels**: " + $pr_labels + "\n\n" +
-                "<details><summary>Files Changed</summary>\n" +
+                "<details><summary>Files Changed</summary>\n\n" +
                 $files_linked + "\n</details>\n\n" +
                 "### Lint Results\n" + $lint_results + "\n\n" +
                 "### Test Summary\n" + $tests_summary + "\n\n" +
