@@ -281,9 +281,9 @@ jobs:
           QUALITATIVE_ANALYSIS+=$'- Modified files: '"$NUM_FILES"$'\n\n'
           QUALITATIVE_ANALYSIS+=$'**Description Quality**:\n'
           if [ "$BODY_WORD_COUNT" -ge 50 ]; then
-            QUALITATIVE_ANALYSIS+=$'- ✅ Detailed ('"$BODY_WORD_COUNT"' words)\n\n'
+            QUALITATIVE_ANALYSIS+=$'- ✅ Detailed ('"$BODY_WORD_COUNT"' words)'
           else
-            QUALITATIVE_ANALYSIS+=$'- ⚠️ Brief ('"$BODY_WORD_COUNT"' words)\n\n'
+            QUALITATIVE_ANALYSIS+=$'- ⚠️ Brief ('"$BODY_WORD_COUNT"' words)'
           fi
       
           COMMENT_BODY=$(jq -n \
@@ -306,7 +306,7 @@ jobs:
                 "## 🚀 Pull Request Summary\n" +
                 "**Title**: " + $pr_title + "\n" +
                 "**PR URL**: " + $pr_url + "\n" +
-                "**PR Body**: " + "\n" + "> " + $pr_body + "\n\n" +
+                "**PR Body**: " + "\n" + $pr_body + "\n\n" +
                 "**Labels**: " + $pr_labels + "\n" +
                 "**Workflow Status**: " + $workflow_status + "\n\n" +
                 "### Files Changed\n" + $files_linked + "\n\n" +
