@@ -271,7 +271,10 @@ jobs:
           # Escape quotes and backticks in variables that may contain special characters
           FILES_LINKED_ESCAPED=$(echo "$FILES_LINKED" | sed -E 's/["“”]/\\"/g; s/`/´/g')
           PR_BODY_ESCAPED=$(echo "$PR_BODY" | sed -E 's/["“”]/\\"/g; s/`/´/g')
-          
+
+          # Format PR body as a blockquote (each line prefixed with "> ")
+          PR_BODY_FORMATTED=$(echo "$PR_BODY_ESCAPED" | sed 's/^/> /')
+
           # Calculate basic metrics
           NUM_FILES=$(echo "$FILES_LINKED" | grep -c "\- \[")
           BODY_WORD_COUNT=$(echo "$PR_BODY" | wc -w)
@@ -326,7 +329,7 @@ jobs:
             --arg pr_author "$PR_AUTHOR" \
             --arg pr_title "$PR_TITLE" \
             --arg pr_url "$PR_URL" \
-            --arg pr_body "$PR_BODY_ESCAPED" \
+            --arg pr_body "$PR_BODY_FORMATTED" \
             --arg pr_labels "$PR_LABELS" \
             --arg workflow_status "${{ job.status }}" \
             --arg files_linked "$FILES_LINKED_ESCAPED" \
@@ -339,10 +342,10 @@ jobs:
             '{
               body: (
                 "Hey @" + $pr_author + ",\n\n" +
-                "## 🚀 Pull Request Summary\n" +
+                "## 🚀 Pull Request Summary\n\n" +
                 "**Title**: " + $pr_title + "\n" +
-                "**PR URL**: " + $pr_url + "\n" +
-                "**PR Body**: " + "\n" + $pr_body + "\n\n" +
+                "**PR URL**: " + $pr_url + "\n\n" +
+                "**PR Body**:\n" + $pr_body + "\n\n" +
                 "**Labels**: " + $pr_labels + "\n" +
                 "**Workflow Status**: " + $workflow_status + "\n\n" +
                 "### Files Changed\n" + $files_linked + "\n\n" +
