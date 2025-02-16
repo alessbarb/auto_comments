@@ -277,14 +277,14 @@ jobs:
           BODY_WORD_COUNT=$(echo "$PR_BODY" | wc -w)
           QUALITATIVE_ANALYSIS=""
           if [ "$NUM_FILES" -gt 10 ]; then
-            QUALITATIVE_ANALYSIS="This PR changes a large number of files ($NUM_FILES). Please review carefully for potential side effects."
+            QUALITATIVE_ANALYSIS='This PR changes a large number of files ($NUM_FILES). Please review carefully for potential side effects.\n'
           else
-            QUALITATIVE_ANALYSIS="This PR changes a moderate number of files ($NUM_FILES)."
+            QUALITATIVE_ANALYSIS='This PR changes a moderate number of files ($NUM_FILES).\n'
           fi
           if [ "$BODY_WORD_COUNT" -ge 50 ]; then
-            QUALITATIVE_ANALYSIS="${QUALITATIVE_ANALYSIS}The PR description appears detailed ($BODY_WORD_COUNT words)."
+            QUALITATIVE_ANALYSIS='${QUALITATIVE_ANALYSIS}The PR description appears detailed ($BODY_WORD_COUNT words).\n'
           else
-            QUALITATIVE_ANALYSIS="${QUALITATIVE_ANALYSIS}The PR description is brief ($BODY_WORD_COUNT words). Consider adding more context."
+            QUALITATIVE_ANALYSIS='${QUALITATIVE_ANALYSIS}The PR description is brief ($BODY_WORD_COUNT words). Consider adding more context.\n'
           fi
           
           COMMENT_BODY=$(jq -n \
@@ -314,7 +314,7 @@ jobs:
                 "### Lint Results\n" + $lint_results + "\n\n" +
                 "### Test Summary\n" + $test_summary + "\n\n" +
                 "### Coverage Report\n" + $coverage + "\n\n" +
-                "### Qualitative Analysis\n" + $analysis + "\n" +
+                "### Qualitative Analysis\n" + $analysis + "\n\n" +
                 "**Last Commit SHA**: " + $commit_sha + "\n" +
                 "**Commit Message**: " + $commit_msg + "\n\n" +
                 ":sparkles: Please ensure all tests and checks pass.\n" +
