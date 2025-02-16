@@ -2,9 +2,7 @@ name: Auto-comment on PR
 
 on:
   pull_request:
-    types:
-      - opened
-      - synchronize
+    types: [opened, synchronize]
 
 jobs:
   comment:
@@ -12,265 +10,252 @@ jobs:
     permissions:
       pull-requests: write
     env:
-      GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-      REPO: "${{ github.repository }}"
-      PR_AUTHOR: "${{ github.event.pull_request.user.login }}"
-      PR_ID: "${{ github.event.pull_request.number }}"
-      PR_BRANCH: "${{ github.event.pull_request.head.ref }}"
-      PR_TITLE: "${{ github.event.pull_request.title }}"
-      PR_URL: "${{ github.event.pull_request.html_url }}"
-      PR_BODY: "${{ github.event.pull_request.body }}"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+      PR_ID: ${{ github.event.pull_request.number }}
+      PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+      PR_TITLE: ${{ github.event.pull_request.title }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+      PR_BODY: ${{ github.event.pull_request.body }}
       DEBUG: "false"
 
     steps:
-      # (1) Verify/install jq & curl if missing
+      # ========== SETUP PHASE ==========
       - name: 🛠️ Prepare Dependencies
         run: |
-          echo "Checking jq and curl..."
-          which jq || (sudo apt-get update && sudo apt-get install -y jq)
-          which curl || (sudo apt-get update && sudo apt-get install -y curl)
+          sudo apt-get update
+          sudo apt-get install -y jq curl
 
-      # (2) Validate critical input data
       - name: 🛡️ Validate Input Data
         run: |
-          echo "Validating input data: REPO=$REPO, PR_ID=$PR_ID, PR_BRANCH=$PR_BRANCH"
-          if [[ -z "$REPO" || -z "$PR_ID" || -z "$PR_BRANCH" ]]; then
-            echo "Invalid input data. REPO, PR_ID, or PR_BRANCH is empty."
+          if [[ -z "$REPO" || -z "$PR_ID" || -z "$PR_BRANCH" || -z "$GITHUB_TOKEN" ]]; then
+            echo "::error::Missing required environment variables"
             exit 1
           fi
-          if [[ -z "$GITHUB_TOKEN" ]]; then
-            echo "GITHUB_TOKEN is empty. Cannot proceed."
-            exit 1
-          fi
-          echo "Input data validated successfully."
 
-      # (3) Checkout the code
       - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
-      # (3.1) Set up Node.js environment (for Node-based projects)
-      - name: Setup Node.js
+      - name: 🛡️ Define Retry Function
+        run: |
+          cat <<'EOF' > retry.sh
+          #!/usr/bin/env bash
+          retry_command() {
+            local cmd="$1"
+            local max_retries="$2"
+            local wait_time="$3"
+            local attempt=0
+            until eval "$cmd"; do
+              attempt=$((attempt+1))
+              if [ $attempt -ge $max_retries ]; then
+                echo "Command failed after $max_retries attempts"
+                return 1
+              fi
+              echo "Retrying... ($attempt/$max_retries)"
+              sleep $wait_time
+            done
+          }
+          EOF
+          chmod +x retry.sh
+
+      # ========== PROJECT DETECTION ==========
+      - name: 🔍 Detect Project Type
+        id: detect-project
+        run: |
+          detect_project() {
+            if [ -f "yarn.lock" ]; then
+              echo "node-yarn"
+            elif [ -f "package.json" ]; then
+              echo "node"
+            elif [ -f "pom.xml" ]; then
+              echo "maven"
+            elif [ -f "build.gradle" ]; then
+              echo "gradle"
+            elif [ -f "requirements.txt" ]; then
+              echo "python"
+            else
+              echo "unknown"
+            fi
+          }
+
+          PROJECT_TYPE=$(detect_project)
+          echo "PROJECT_TYPE=$PROJECT_TYPE" >> $GITHUB_ENV
+
+          case $PROJECT_TYPE in
+            node-yarn)
+              echo "BUILD_COMMAND=yarn install" >> $GITHUB_ENV
+              echo "TEST_COMMAND=yarn test" >> $GITHUB_ENV
+              echo "LINT_COMMAND=yarn lint" >> $GITHUB_ENV
+              echo "DEPENDENCY_FILE=yarn.lock" >> $GITHUB_ENV
+              ;;
+            node)
+              echo "BUILD_COMMAND=npm install" >> $GITHUB_ENV
+              echo "TEST_COMMAND=npm test" >> $GITHUB_ENV
+              echo "LINT_COMMAND=npm run lint" >> $GITHUB_ENV
+              echo "DEPENDENCY_FILE=package-lock.json" >> $GITHUB_ENV
+              ;;
+            maven)
+              echo "BUILD_COMMAND=mvn clean package" >> $GITHUB_ENV
+              echo "TEST_COMMAND=mvn test" >> $GITHUB_ENV
+              echo "LINT_COMMAND=mvn checkstyle:check" >> $GITHUB_ENV
+              echo "DEPENDENCY_FILE=pom.xml" >> $GITHUB_ENV
+              ;;
+            gradle)
+              echo "BUILD_COMMAND=gradle build" >> $GITHUB_ENV
+              echo "TEST_COMMAND=gradle test" >> $GITHUB_ENV
+              echo "LINT_COMMAND=gradle check" >> $GITHUB_ENV
+              echo "DEPENDENCY_FILE=build.gradle" >> $GITHUB_ENV
+              ;;
+            python)
+              echo "BUILD_COMMAND=pip install -r requirements.txt" >> $GITHUB_ENV
+              echo "TEST_COMMAND=pytest" >> $GITHUB_ENV
+              echo "LINT_COMMAND=flake8 ." >> $GITHUB_ENV
+              echo "DEPENDENCY_FILE=requirements.txt" >> $GITHUB_ENV
+              ;;
+            *)
+              echo "BUILD_COMMAND=echo 'No build command (unknown project type)'" >> $GITHUB_ENV
+              echo "TEST_COMMAND=echo 'No test command (unknown project type)'" >> $GITHUB_ENV
+              echo "LINT_COMMAND=echo 'No lint command (unknown project type)'" >> $GITHUB_ENV
+              echo "DEPENDENCY_FILE=" >> $GITHUB_ENV
+              ;;
+          esac
+
+      # ========== ENVIRONMENT SETUP ==========
+      - name: ⚙️ Setup Node.js
+        if: ${{ contains(env.PROJECT_TYPE, 'node') }}
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: '18'
 
-      # (4) Detect project type & commands
-      - name: 🔍 Detect Project Type
-        id: detect
+      # ========== DEPENDENCY MANAGEMENT ==========
+      - name: 🔑 Prepare Cache
         run: |
-          echo "Detecting project type..."
-      
-          if [ -f "yarn.lock" ]; then
-            echo "PROJECT_TYPE=node-yarn" >> $GITHUB_ENV
-            echo "BUILD_COMMAND=yarn install" >> $GITHUB_ENV
-            echo "TEST_COMMAND=yarn test" >> $GITHUB_ENV
-            echo "LINT_COMMAND=yarn lint" >> $GITHUB_ENV
-            echo "DEPENDENCY_FILE=yarn.lock" >> $GITHUB_ENV
-            echo "CACHE_PATH=~/.cache/yarn" >> $GITHUB_ENV
-          elif [ -f "package.json" ]; then
-            echo "PROJECT_TYPE=node" >> $GITHUB_ENV
-            echo "BUILD_COMMAND=npm install" >> $GITHUB_ENV
-            echo "TEST_COMMAND=npm test" >> $GITHUB_ENV
-            echo "LINT_COMMAND=npm run lint" >> $GITHUB_ENV
-            echo "DEPENDENCY_FILE=package-lock.json" >> $GITHUB_ENV
-            echo "CACHE_PATH=~/.npm" >> $GITHUB_ENV
-          elif [ -f "pom.xml" ]; then
-            echo "PROJECT_TYPE=maven" >> $GITHUB_ENV
-            echo "BUILD_COMMAND=mvn clean package" >> $GITHUB_ENV
-            echo "TEST_COMMAND=mvn test" >> $GITHUB_ENV
-            echo "LINT_COMMAND=mvn checkstyle:check" >> $GITHUB_ENV
-            echo "DEPENDENCY_FILE=pom.xml" >> $GITHUB_ENV
-            echo "CACHE_PATH=~/.m2/repository" >> $GITHUB_ENV
-          elif [ -f "build.gradle" ]; then
-            echo "PROJECT_TYPE=gradle" >> $GITHUB_ENV
-            echo "BUILD_COMMAND=gradle build" >> $GITHUB_ENV
-            echo "TEST_COMMAND=gradle test" >> $GITHUB_ENV
-            echo "LINT_COMMAND=gradle check" >> $GITHUB_ENV
-            echo "DEPENDENCY_FILE=build.gradle" >> $GITHUB_ENV
-            echo "CACHE_PATH=~/.gradle" >> $GITHUB_ENV
-          elif [ -f "requirements.txt" ]; then
-            echo "PROJECT_TYPE=python" >> $GITHUB_ENV
-            echo "BUILD_COMMAND=pip install -r requirements.txt" >> $GITHUB_ENV
-            echo "TEST_COMMAND=pytest" >> $GITHUB_ENV
-            echo "LINT_COMMAND=flake8 ." >> $GITHUB_ENV
-            echo "DEPENDENCY_FILE=requirements.txt" >> $GITHUB_ENV
-            echo "CACHE_PATH=~/.cache/pip" >> $GITHUB_ENV
-          else
-            echo "PROJECT_TYPE=unknown" >> $GITHUB_ENV
-            echo "BUILD_COMMAND=echo \"No build command (unknown project type)\"" >> $GITHUB_ENV
-            echo "TEST_COMMAND=echo \"No test command (unknown project type)\"" >> $GITHUB_ENV
-            echo "LINT_COMMAND=echo \"No lint command (unknown project type)\"" >> $GITHUB_ENV
-            echo "DEPENDENCY_FILE=" >> $GITHUB_ENV
-            echo "CACHE_PATH=" >> $GITHUB_ENV
-          fi
+          case $PROJECT_TYPE in
+            node-yarn)
+              echo "CACHE_PATH=~/.cache/yarn" >> $GITHUB_ENV
+              ;;
+            node)
+              echo "CACHE_PATH=~/.npm" >> $GITHUB_ENV
+              ;;
+            maven)
+              echo "CACHE_PATH=~/.m2/repository" >> $GITHUB_ENV
+              ;;
+            gradle)
+              echo "CACHE_PATH=~/.gradle" >> $GITHUB_ENV
+              ;;
+            python)
+              echo "CACHE_PATH=~/.cache/pip" >> $GITHUB_ENV
+              ;;
+            *)
+              echo "CACHE_PATH=" >> $GITHUB_ENV
+              ;;
+          esac
 
-      # (4.1) Prepare cache info
-      - name: 🔑 Prepare Cache Key
-        id: prepare-cache
-        run: |
-          PROJECT_TYPE="${PROJECT_TYPE}"
-          DEPENDENCY_FILE="${DEPENDENCY_FILE}"
-          CACHE_PATH="${CACHE_PATH}"
-
-          echo "PROJECT_TYPE=$PROJECT_TYPE"
-          echo "DEPENDENCY_FILE=$DEPENDENCY_FILE"
-          echo "CACHE_PATH=$CACHE_PATH"
-
-          echo "cache-path=$CACHE_PATH" >> $GITHUB_OUTPUT
-          echo "dependency-file=$DEPENDENCY_FILE" >> $GITHUB_OUTPUT
-        env:
-          PROJECT_TYPE: ${{ env.PROJECT_TYPE }}
-          DEPENDENCY_FILE: ${{ env.DEPENDENCY_FILE }}
-          CACHE_PATH: ${{ env.CACHE_PATH }}
-
-      # (4.2) Cache dependencies
       - name: 🗄️ Cache Dependencies
         if: env.PROJECT_TYPE != 'unknown'
         uses: actions/cache@v4
         with:
-          path: ${{ steps.prepare-cache.outputs.cache-path }}
-          key: ${{ runner.os }}-${{ env.PROJECT_TYPE }}-${{ hashFiles(steps.prepare-cache.outputs.dependency-file) }}
-        continue-on-error: true
-
-      # Retry function for build/test
-      - name: 🛡️ Define Retry Function
-        id: define-retry
+          path: ${{ env.CACHE_PATH }}
+          key: ${{ runner.os }}-${{ env.PROJECT_TYPE }}-${{ hashFiles(env.DEPENDENCY_FILE) }}
+          
+      - name: 🛠️ Build & Test
         run: |
-          # Create a file named retry.sh that contains the retry function
-          cat <<'EOF' | sed -E 's/^ {10}//' > retry.sh
-          #!/usr/bin/env bash
-
-          # Function: retry_command
-          # Parameters:
-          #  - $1 => The command to execute
-          #  - $2 => Max number of retries
-          #  - $3 => Wait time (in seconds) between retries
-          retry_command() {
-            local -r cmd="$1"
-            local -r max_retries="$2"
-            local -r wait_time="$3"
-            local retry_count=0
-
-            while [[ $retry_count -lt $max_retries ]]; do
-              echo "Executing: $cmd ... Attempt $(($retry_count + 1))"
-              if eval "$cmd"; then
-                # If the command succeeds (exit code 0), exit the loop
-                return 0
-              fi
-              retry_count=$((retry_count + 1))
-              echo "Command failed. Waiting ${wait_time}s before next attempt..."
-              sleep $wait_time
-            done
-
-            echo "Failed to execute '$cmd' after $max_retries attempts."
-            return 1
-          }
-          EOF
-
-          # Make the script executable
-          chmod +x retry.sh
-
-      # (5) Build & Test (with retries)
-      - name: ⚙️ Build & Test
-        run: |
-          # Source the retry_command function from the script we created
+          # Cargar la función de reintentos
           source ./retry.sh
-
+      
           echo "PROJECT_TYPE=$PROJECT_TYPE"
-
-          # If the project type is unknown, skip build & test
+      
+          # Si el proyecto es desconocido, se asignan valores por defecto y se salta build & test
           if [ "$PROJECT_TYPE" = "unknown" ]; then
-            echo "No recognized project files found. Skipping build & test."
-            echo "TESTS_SUMMARY='No tests ran (unknown project type)'" >> $GITHUB_ENV
-            echo "COVERAGE_REPORT='No coverage (unknown project type)'" >> $GITHUB_ENV
+            echo "No recognized project files. Skipping build & test."
+            echo "TEST_STATUS=No tests executed (unknown project type)" >> $GITHUB_ENV
+            echo "COVERAGE=No coverage (unknown project type)" >> $GITHUB_ENV
             exit 0
           fi
-
-          # Retry Build Command (e.g., npm install, mvn clean package, etc.)
-          if ! retry_command "${BUILD_COMMAND}" 3 5; then
+      
+          # Ejecutar el comando de build con reintentos
+          if ! retry_command "$BUILD_COMMAND" 3 5; then
             echo "Build failed after retries."
             exit 1
           fi
-
-          # Retry Test Command
-          if ! retry_command "${TEST_COMMAND}" 3 5; then
+      
+          # Ejecutar el comando de test con reintentos
+          if ! retry_command "$TEST_COMMAND" 3 5; then
             echo "Tests failed after retries."
             exit 1
           fi
-
-          # Example: Coverage logic for Node/Jest
-          if [[ "$PROJECT_TYPE" == "node" || "$PROJECT_TYPE" == "node-yarn" ]]; then
-            echo "Checking coverage summary for Node..."
-            COVERAGE_JSON="./coverage/coverage-summary.json"
-            if [ -f "$COVERAGE_JSON" ]; then
-              COVERAGE_PCT=$(jq '.total.lines.pct' "$COVERAGE_JSON")
-              echo "COVERAGE_REPORT='Coverage: ${COVERAGE_PCT}%'" >> $GITHUB_ENV
-            else
-              echo "COVERAGE_REPORT='No coverage info found.'" >> $GITHUB_ENV
-            fi
-          elif [ "$PROJECT_TYPE" == "maven" ]; then
-            echo "COVERAGE_REPORT='Example: coverage from Jacoco (Maven)'" >> $GITHUB_ENV
-          elif [ "$PROJECT_TYPE" == "gradle" ]; then
-            echo "COVERAGE_REPORT='Example: coverage from Jacoco (Gradle)'" >> $GITHUB_ENV
-          elif [ "$PROJECT_TYPE" == "python" ]; then
-            echo "COVERAGE_REPORT='Example: coverage from Pytest --cov'" >> $GITHUB_ENV
-          fi
-
-          # Example: Save a successful test summary message
-          echo "TESTS_SUMMARY='All tests passed (example)'" >> $GITHUB_ENV
+      
+          echo "Build and test steps completed."
+      
+          # Función para establecer la cobertura según el tipo de proyecto
+          set_coverage() {
+            case "$PROJECT_TYPE" in
+              node|node-yarn)
+                COVERAGE_FILE="./coverage/coverage-summary.json"
+                if [ -f "$COVERAGE_FILE" ]; then
+                  COVERAGE_PCT=$(jq '.total.lines.pct' "$COVERAGE_FILE")
+                  COVERAGE="Coverage: ${COVERAGE_PCT}%"
+                else
+                  COVERAGE="No coverage info found"
+                fi
+                ;;
+              *)
+                # Aquí se pueden agregar otros casos para diferentes tipos de proyectos
+                COVERAGE="No coverage info for project type: $PROJECT_TYPE"
+                ;;
+            esac
+          }
+      
+          set_coverage
+          echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
+          echo "TEST_STATUS=All tests passed" >> $GITHUB_ENV
         env:
           PROJECT_TYPE: ${{ env.PROJECT_TYPE }}
           BUILD_COMMAND: ${{ env.BUILD_COMMAND }}
           TEST_COMMAND: ${{ env.TEST_COMMAND }}
 
-      # (6) Lint (fail pipeline if errors)
-      - name: 🧹 Lint
+      # ========== CODE QUALITY ==========
+      - name: 🧹 Lint Code
         run: |
-          set -e  # fail fast on error
           if [ "$PROJECT_TYPE" = "unknown" ]; then
-            echo "LINTER_RESULTS='No lint (unknown project type)'" >> $GITHUB_ENV
-            exit 0
+            echo "LINT_STATUS=No lint (unknown project type)" >> $GITHUB_ENV
+          else
+            if eval "$LINT_COMMAND"; then
+              echo "LINT_STATUS=Lint passed successfully!" >> $GITHUB_ENV
+            else
+              echo "LINT_STATUS=Lint errors detected!" >> $GITHUB_ENV
+              exit 1
+            fi
           fi
-
-          eval "$LINT_COMMAND"
-          echo "LINTER_RESULTS='Lint passed successfully!'" >> $GITHUB_ENV
-        env:
-          PROJECT_TYPE: ${{ env.PROJECT_TYPE }}
-          LINT_COMMAND: ${{ env.LINT_COMMAND }}
-
-      # (7) Gather commit info
-      - name: 🔎 Gather Commit Info
+          
+      # ========== GATHER DATA ==========
+      - name: 📊 Collect Metadata
         run: |
           COMMIT_SHA=$(git rev-parse HEAD)
           COMMIT_MESSAGE=$(git log -1 --pretty=%B)
           echo "COMMIT_SHA=$COMMIT_SHA" >> $GITHUB_ENV
           echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
 
-      # (8) Gather PR details (labels, changed files)
-      - name: 📊 Gather PR Details
-        id: pr_details
+      - name: 📌 Get PR Details
+        id: pr-details
         run: |
           source ./retry.sh
-
-          # PR Labels
-          PR_LABELS=$(jq -r '.pull_request.labels[]?.name' "$GITHUB_EVENT_PATH" | tr '\n' ', ') || exit 1
-          echo "PR_LABELS=$PR_LABELS" >> "$GITHUB_ENV"
-
-          # Changed Files (with retry)
-          FILES_JSON=""
-          if ! retry_command "FILES_JSON=\$(curl -s -H \"Authorization: token $GITHUB_TOKEN\" https://api.github.com/repos/$REPO/pulls/$PR_ID/files)" 3 5; then
-            echo "Failed to retrieve PR files."
-            exit 1
+          PR_LABELS=$(jq -r '.pull_request.labels[]?.name' "$GITHUB_EVENT_PATH" | tr '\n' ', ')
+          if [ -z "$PR_LABELS" ]; then
+            PR_LABELS="No labels assigned"
           fi
+          echo "PR_LABELS=${PR_LABELS%,}" >> $GITHUB_ENV
 
-          if [[ -z "$FILES_JSON" ]]; then
-            echo "FILES_JSON is empty. Exiting."
+          FILES_JSON=$(curl -s -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$REPO/pulls/$PR_ID/files")
+          if [ -z "$FILES_JSON" ]; then
+            echo "Failed to retrieve PR files."
             exit 1
           fi
 
           REPO_URL="https://github.com/$REPO/blob/$PR_BRANCH"
           > files_linked.txt
-          for row in $(echo "${FILES_JSON}" | jq -r '.[] | @base64'); do
+          for row in $(echo "$FILES_JSON" | jq -r '.[] | @base64'); do
             _jq() {
               echo ${row} | base64 --decode | jq -r ${1}
             }
@@ -278,107 +263,75 @@ jobs:
             ADDITIONS=$(_jq '.additions')
             DELETIONS=$(_jq '.deletions')
             CHANGES=$(_jq '.changes')
-
             echo "- [$FILE_NAME]($REPO_URL/$FILE_NAME) (Additions: $ADDITIONS, Deletions: $DELETIONS, Changes: $CHANGES)" >> files_linked.txt
           done
 
+          FILES_LINKED=$(cat files_linked.txt)
           {
-            echo 'FILES_LINKED<<EOF'
-            cat files_linked.txt
-            echo EOF
-          } >> "$GITHUB_ENV"
-
-          echo "PR details gathered successfully."
-
-      # (9) Workflow status steps
-      - name: ✔️ Workflow Status = Success
-        if: success()
+            echo "FILES_LINKED<<EOF"
+            echo "$FILES_LINKED"
+            echo "EOF"
+          } >> $GITHUB_ENV
+ 
+      # ========== NOTIFICATION ==========
+      - name: 💬 Post PR Comment
+        env:
+          COMMENT_TITLE: "## 🤖 Automated PR Analysis"
         run: |
-          echo "WORKFLOW_STATUS=success" >> $GITHUB_ENV
-          echo "Workflow completed successfully."
-
-      - name: ❌ Error Handling (Workflow Status = Failure)
-        if: failure()
-        run: |
-          echo "WORKFLOW_STATUS=failure" >> $GITHUB_ENV
-          exit 1
-
-      # (10) Add PR Comment with Markdown
-      - name: 📝 Add Comment to PR
-        run: |
-          # Escape backticks & quotes in both PR_BODY and FILES_LINKED
-          FILES_LINKED=$(echo "$FILES_LINKED" | sed -E 's/["“”]/\\"/g; s/`/´/g')
-          PR_BODY=$(echo "$PR_BODY" | sed -E 's/["“”]/\\"/g; s/`/´/g')
-
+          # Escape quotes and backticks in variables that may contain special characters
+          FILES_LINKED_ESCAPED=$(echo "$FILES_LINKED" | sed -E 's/["“”]/\\"/g; s/`/´/g')
+          PR_BODY_FORMATTED=$(echo "$PR_BODY" | sed -E 's/["“”]/\\"/g; s/`/´/g; s/^/> /')
+          WORKFLOW_STATUS=$(echo "${{ job.status }}" | sed 's/^./\u&/')
+          
           COMMENT_BODY=$(jq -n \
             --arg pr_author "$PR_AUTHOR" \
             --arg pr_title "$PR_TITLE" \
             --arg pr_url "$PR_URL" \
-            --arg pr_body "$PR_BODY" \
-            --arg repo "$REPO" \
+            --arg pr_body "$PR_BODY_FORMATTED" \
             --arg pr_labels "$PR_LABELS" \
             --arg workflow_status "$WORKFLOW_STATUS" \
-            --arg files_linked "$FILES_LINKED" \
-            --arg lint_results "$LINTER_RESULTS" \
-            --arg tests_summary "$TESTS_SUMMARY" \
-            --arg coverage_report "$COVERAGE_REPORT" \
+            --arg files_linked "$FILES_LINKED_ESCAPED" \
+            --arg lint_results "$LINT_STATUS" \
+            --arg test_summary "$TEST_STATUS" \
+            --arg coverage "$COVERAGE" \
             --arg commit_sha "$COMMIT_SHA" \
             --arg commit_msg "$COMMIT_MESSAGE" \
             '{
-              "body": (
+              body: (
                 "Hey @" + $pr_author + ",\n\n" +
-                "## 🚀 Pull Request Summary\n" +
-                "**Title**: " + $pr_title + "\n" +
-                "**PR URL**: " + $pr_url + "\n" +
-                "**PR Body**: " + $pr_body + "\n" +
-                "**Labels**: " + $pr_labels + "\n" +
-                "**Workflow Status**: " + $workflow_status + "\n\n" +
-                "**Files Changed:**\n" + $files_linked + "\n\n" +
-                "### Lint Results\n" + $lint_results + "\n\n" +
-                "### Test Summary\n" + $tests_summary + "\n\n" +
-                "### Coverage Report\n" + $coverage_report + "\n\n" +
-                "**Last Commit SHA**: " + $commit_sha + "\n" +
-                "Message: " + $commit_msg + "\n\n" +
-                ":sparkles: Please ensure all tests and checks pass.\n" +
-                "For more details, see [our contribution guide](https://github.com/" + $repo + "/blob/main/CONTRIBUTING.md)."
+                "These are the details of your Pull Request:\n\n" +
+                "### " + $pr_title + "\n\n" +
+                "**PR URL**:\n" + $pr_url + "\n\n" +
+                "**PR Body**:\n" + $pr_body + "\n\n" +
+                "**Labels**:\n" + $pr_labels + "\n\n" +
+                "**Workflow Status**:\n" + $workflow_status + "\n\n" +
+                "**Files Changed**:\n" + $files_linked + "\n\n" +
+                "**Lint Results**:\n" + $lint_results + "\n\n" +
+                "**Test Summary**:\n" + $test_summary + "\n\n" +
+                "**Coverage Report**:\n" + $coverage + "\n\n" +
+                "**Last Commit SHA**:\n" + $commit_sha + "\n\n" +
+                "**Commit Message**:\n" + $commit_msg + "\n\n" +
+                ":sparkles: Please ensure all tests and checks pass.\n\n" +
+                "[View PR Details](" + $pr_url + ")"
               )
-            }'
-          )
-
-          if [[ -z "$COMMENT_BODY" ]]; then
-            echo "Comment body is empty. Aborting."
-            exit 1
-          fi
-
-          # Simple truncation if body > 65536 chars
+            }')
+      
+          # Truncate if the comment exceeds GitHub's limit
           if [[ ${#COMMENT_BODY} -gt 65536 ]]; then
-            echo "Comment body exceeds 65536 characters. Truncating..."
             COMMENT_BODY="${COMMENT_BODY:0:65532}...)"
           fi
-
-          echo "Posting comment to PR..."
-          curl \
-            -X POST \
+      
+          curl -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$COMMENT_BODY" \
             "https://api.github.com/repos/$REPO/issues/$PR_ID/comments"
 
-          echo "Comment added to PR successfully."
-
-      # (11) Debug Logs
-      - name: 🐛 Debug Logs
+      # ========== DEBUGGING ==========
+      - name: 🐛 Debug Info
         if: env.DEBUG == 'true'
         run: |
-          echo "===== DEBUG LOGS ====="
-          echo "REPO: $REPO"
-          echo "PR_ID: $PR_ID"
-          echo "PR_BRANCH: $PR_BRANCH"
-          echo "PR_LABELS: $PR_LABELS"
-          echo "LINTER_RESULTS: $LINTER_RESULTS"
-          echo "TESTS_SUMMARY: $TESTS_SUMMARY"
-          echo "COVERAGE_REPORT: $COVERAGE_REPORT"
-          echo "COMMIT_SHA: $COMMIT_SHA"
-          echo "COMMIT_MESSAGE: $COMMIT_MESSAGE"
-          echo "FILES_LINKED: $FILES_LINKED"
-          echo "======================"
+          echo "===== ENVIRONMENT ====="
+          env | sort
+          echo "===== FILE SYSTEM ====="
+          du -h -d 2
