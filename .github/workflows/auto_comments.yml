@@ -131,7 +131,7 @@ jobs:
         id: define-retry
         run: |
           # Create a file named retry.sh that contains the retry function
-          cat << 'EOF' > retry.sh
+          cat <<'EOF' | sed -E 's/^ {10}//' > retry.sh
           #!/usr/bin/env bash
 
           # Function: retry_command
