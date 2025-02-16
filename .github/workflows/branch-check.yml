@@ -1,0 +1,41 @@
+name: Force close PR if not from development
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  enforce-development-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check, comment, and close PR if source is not development
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            // Check if the target branch is 'main'
+            if (pr.base.ref === "main") {
+              // If the source branch is not 'development', post a comment and close the PR
+              if (pr.head.ref !== "development") {
+                const message = "This pull request is being closed because it does not originate from 'development'. Please open PRs to 'main' only from 'development'.";
+                console.log(message);
+                // Post a comment on the PR
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  body: message
+                });
+                // Close the PR
+                await github.rest.pulls.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.number,
+                  state: "closed"
+                });
+              } else {
+                console.log("Validation passed: PR originates from 'development'.");
+              }
+            } else {
+              console.log("The target branch is not 'main'. No action taken.");
+            }
