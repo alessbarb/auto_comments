@@ -277,21 +277,18 @@ jobs:
           NUM_FILES=$(echo "$FILES_LINKED" | grep -c "\- \[")
           BODY_WORD_COUNT=$(echo "$PR_BODY" | wc -w)
           
-          QUALITATIVE_ANALYSIS+=$'**Size Analysis**:\n'
-          if [ "$NUM_FILES" -gt 10 ]; then
-            QUALITATIVE_ANALYSIS+=$'- Large change: '$(printf "%d files modified\n" $NUM_FILES)
-          else
-            QUALITATIVE_ANALYSIS+=$'- Moderate change: '$(printf "%d files modified\n" $NUM_FILES)
-          fi
+          QUALITATIVE_ANALYSIS+=$'**Size Analysis**:  \n'  
+          QUALITATIVE_ANALYSIS+=$'- Modified files: '$NUM_FILES$'  \n'  
           
-          QUALITATIVE_ANALYSIS+=$'\n**Description Quality**:\n'
+          QUALITATIVE_ANALYSIS+=$'**Description Quality**:  \n'  
           if [ "$BODY_WORD_COUNT" -ge 50 ]; then
-            QUALITATIVE_ANALYSIS+=$'- Detailed description ('$BODY_WORD_COUNT' words)'
+            QUALITATIVE_ANALYSIS+=$'- ✅ Detailed ('$BODY_WORD_COUNT' words)'
           else
-            QUALITATIVE_ANALYSIS+=$'- Brief description ('$BODY_WORD_COUNT' words). Consider adding:\n  - Context\n  - Motivation\n  - Implementation details'
+            QUALITATIVE_ANALYSIS+=$'- ⚠️ Brief ('$BODY_WORD_COUNT$' words)  \n'  
+            QUALITATIVE_ANALYSIS+=$'  _Consider adding more context_'
           fi
 
-          FORMATTED_ANALYSIS=$(printf "%s" "$QUALITATIVE_ANALYSIS" | jq -Rs .)
+          FORMATTED_ANALYSIS=$(echo "$QUALITATIVE_ANALYSIS" | jq -Rs . | sed 's/\\n/\\\\n/g')
           
           COMMENT_BODY=$(jq -n \
             --arg pr_author "$PR_AUTHOR" \
@@ -320,7 +317,7 @@ jobs:
                 "### Lint Results\n" + $lint_results + "\n\n" +
                 "### Test Summary\n" + $test_summary + "\n\n" +
                 "### Coverage Report\n" + $coverage + "\n\n" +
-                "### Qualitative Analysis\n" + ($analysis | gsub("\\n";"\n")) + "\n\n" +
+                "### Qualitative Analysis  \n" + ($analysis | gsub("\\\\n"; "\n")) + "\n\n"
                 "**Last Commit SHA**: " + $commit_sha + "\n" +
                 "**Commit Message**: " + $commit_msg + "\n\n" +
                 ":sparkles: Please ensure all tests and checks pass.\n" +
