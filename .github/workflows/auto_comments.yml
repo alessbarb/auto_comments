@@ -120,7 +120,7 @@ jobs:
       # (4.2) Cache dependencies
       - name: 🗄️ Cache Dependencies
         if: env.PROJECT_TYPE != 'unknown'
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ steps.prepare-cache.outputs.cache-path }}
           key: ${{ runner.os }}-${{ env.PROJECT_TYPE }}-${{ hashFiles(steps.prepare-cache.outputs.dependency-file) }}
