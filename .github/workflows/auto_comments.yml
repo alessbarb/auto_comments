@@ -96,6 +96,7 @@ jobs:
             echo "LINT_COMMAND='echo \"No lint command (unknown project type)\"'" >> $GITHUB_ENV
             echo "DEPENDENCY_FILE=''" >> $GITHUB_ENV
             echo "CACHE_PATH=''" >> $GITHUB_ENV
+          fi
 
       # (4.1) Prepare cache info
       - name: 🔑 Prepare Cache Key
