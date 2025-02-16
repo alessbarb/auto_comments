@@ -291,19 +291,19 @@ jobs:
             '{
               body: (
                 "Hey @" + $pr_author + ",\n\n" +
-                "## 🚀 Pull Request Summary\n\n" +
+                "These are the details of your Pull Request:\n\n" +
                 "**Title**: " + $pr_title + "\n" +
                 "**PR URL**: " + $pr_url + "\n\n" +
                 "**PR Body**:\n" + $pr_body + "\n\n" +
                 "**Labels**: " + $pr_labels + "\n" +
                 "**Workflow Status**: " + $workflow_status + "\n\n" +
-                "### Files Changed\n" + $files_linked + "\n\n" +
-                "### Lint Results\n" + $lint_results + "\n\n" +
-                "### Test Summary\n" + $test_summary + "\n\n" +
-                "### Coverage Report\n" + $coverage + "\n\n" +
+                "**Files Changed**:\n" + $files_linked + "\n\n" +
+                "**Lint Results**:\n" + $lint_results + "\n\n" +
+                "**Test Summary**:\n" + $test_summary + "\n\n" +
+                "**Coverage Report:\n" + $coverage + "\n\n" +
                 "**Last Commit SHA**: " + $commit_sha + "\n" +
-                "**Commit Message**: " + $commit_msg + "\n\n" +
-                ":sparkles: Please ensure all tests and checks pass.\n" +
+                "**Commit Message**:\n" + $commit_msg + "\n\n" +
+                ":sparkles: Please ensure all tests and checks pass.\n\n" +
                 "[View PR Details](" + $pr_url + ")"
               )
             }')
